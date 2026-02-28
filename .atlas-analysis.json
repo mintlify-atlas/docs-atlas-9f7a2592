@@ -1,0 +1,129 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "RoZod",
+  "projectDescription": "Type-safe TypeScript wrapper for Roblox API and OpenCloud with 750+ endpoints",
+  "theme": "aspen",
+  "primaryColor": "#0066FF",
+  "lightColor": "#3D8AFF",
+  "darkColor": "#0052CC",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/endpoints",
+              "concepts/authentication",
+              "concepts/error-handling",
+              "concepts/type-safety"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/basic-requests",
+              "guides/pagination",
+              "guides/batch-processing",
+              "guides/custom-endpoints",
+              "guides/opencloud",
+              "guides/server-configuration"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "auth/overview",
+              "auth/browser",
+              "auth/server",
+              "auth/cookie-pools",
+              "auth/opencloud-keys",
+              "auth/security-features",
+              "auth/cookie-rotation",
+              "auth/challenge-handling"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core API",
+            "pages": [
+              "api/fetch-api",
+              "api/fetch-api-pages",
+              "api/fetch-api-split",
+              "api/endpoint-definition"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/configure-server",
+              "api/cookie-management",
+              "api/security-configuration"
+            ]
+          },
+          {
+            "group": "Classic Endpoints",
+            "pages": [
+              "api/endpoints/users",
+              "api/endpoints/games",
+              "api/endpoints/groups",
+              "api/endpoints/catalog",
+              "api/endpoints/economy",
+              "api/endpoints/friends",
+              "api/endpoints/thumbnails"
+            ]
+          },
+          {
+            "group": "OpenCloud",
+            "pages": [
+              "api/opencloud/overview",
+              "api/opencloud/datastores",
+              "api/opencloud/messaging",
+              "api/opencloud/universes",
+              "api/opencloud/assets"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Type-safe API wrapper with full TypeScript support",
+    "750+ endpoints (650+ classic + 95+ OpenCloud)",
+    "Automatic pagination and batch processing",
+    "Built-in authentication with cookie pools and rotation",
+    "Advanced security features (XCSRF, HBA, challenge handling)",
+    "Universal runtime support (Node.js, Bun, Deno, Browser)",
+    "Custom endpoint definitions with Zod validation",
+    "Production-tested with 800,000+ active users"
+  ],
+  "publicApiSurface": [
+    "fetchApi - Main function for making API requests",
+    "fetchApiPages - Fetch all pages of paginated responses",
+    "fetchApiPagesGenerator - Stream paginated responses",
+    "fetchApiSplit - Batch process large requests",
+    "endpoint - Define custom endpoints with type safety",
+    "configureServer - Configure authentication and settings",
+    "setHandleGenericChallenge - Handle authentication challenges",
+    "refreshCookie - Manually refresh authentication cookies",
+    "getCookies - Get current cookie values",
+    "updateCookie - Update cookie in pool",
+    "clearServerConfig - Clear server configuration",
+    "getServerConfig - Get current server configuration",
+    "changeHBAKeys - Configure hardware-backed authentication",
+    "isAnyErrorResponse - Type guard for error responses"
+  ]
+}
