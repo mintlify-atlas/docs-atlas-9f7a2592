@@ -1,0 +1,540 @@
+---
+title: DataStore APIs
+description: Manage persistent data storage with OpenCloud DataStore endpoints
+---
+
+DataStore APIs allow you to read, write, and manage persistent data for your Roblox experiences from external services.
+
+## Overview
+
+RoZod provides access to both v1 and v2 DataStore endpoints:
+
+- **v1**: Legacy endpoints with basic CRUD operations
+- **v2**: Modern endpoints with scopes, revisions, and advanced filtering
+
+<Note>
+Prefer v2 endpoints for new projects as they offer better features and performance.
+</Note>
+
+## Import
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1, v2 } from 'rozod/lib/opencloud';
+
+// Or import specific functions
+import { 
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId 
+} from 'rozod/lib/opencloud/v2/cloud';
+```
+
+## Authentication
+
+DataStore operations require specific scopes in your API key:
+
+- `universe-datastores.objects:read` - Read entries
+- `universe-datastores.objects:write` - Create/update entries
+- `universe-datastores.objects:create` - Create new entries
+- `universe-datastores.objects:update` - Update existing entries
+- `universe-datastores.objects:delete` - Delete entries
+- `universe-datastores.objects:list` - List entries and data stores
+- `universe-datastores.versions:read` - Read entry versions
+- `universe-datastores.versions:list` - List entry versions
+- `universe-datastores.control:list` - List data stores
+- `universe-datastores.control:delete` - Delete data stores
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cloudKey: 'your_api_key_with_datastore_scopes' 
+});
+```
+
+## List data stores
+
+Get a list of all data stores in your universe:
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const response = await fetchApi(v2.getCloudV2UniversesUniverseIdDataStores, {
+  universe_id: '123456789',
+  maxPageSize: 50,
+  filter: 'id.startsWith("player_")',
+});
+
+for (const dataStore of response.dataStores) {
+  console.log(dataStore.id);
+  console.log(dataStore.createTime);
+}
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const response = await fetchApi(v1.datastores.getUniversesUniverseIdDatastores, {
+  universeId: 123456789,
+  limit: 50,
+  prefix: 'player_',
+});
+```
+</CodeGroup>
+
+## Get an entry
+
+Retrieve a specific entry from a data store:
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const entry = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156',
+  }
+);
+
+console.log(entry.value);           // The stored data
+console.log(entry.revisionId);      // Current revision ID
+console.log(entry.users);           // Associated user IDs
+console.log(entry.attributes);      // Entry attributes
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const entry = await fetchApi(
+  v1.datastores.getUniversesUniverseIdDatastoresDatastoreEntriesEntry,
+  {
+    universeId: 123456789,
+    datastoreName: 'PlayerData',
+    entryKey: 'player_156',
+    scope: 'global',
+  }
+);
+```
+</CodeGroup>
+
+### Get entry at specific revision
+
+v2 supports retrieving historical versions:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Get specific revision
+const entry = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156@08DC3D3F43F9FCC1.0000000001.08DC3D3F43F9FCC1.01',
+  }
+);
+
+// Get entry as it was at a specific time
+const historicalEntry = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156@latest:2024-12-02T06:00:00Z',
+  }
+);
+```
+
+## Create an entry
+
+Create a new entry in a data store:
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const newEntry = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    id: 'player_156',
+  },
+  {
+    value: {
+      coins: 1000,
+      level: 5,
+      inventory: ['sword', 'shield'],
+    },
+    users: ['156'],
+    attributes: {
+      lastLogin: '2024-01-15',
+    },
+  }
+);
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const playerData = {
+  coins: 1000,
+  level: 5,
+  inventory: ['sword', 'shield'],
+};
+
+await fetchApi(
+  v1.datastores.postUniversesUniverseIdDatastoresDatastoreEntriesEntry,
+  {
+    universeId: 123456789,
+    datastoreName: 'PlayerData',
+    entryKey: 'player_156',
+    'roblox-entry-userids': '156',
+    'roblox-entry-attributes': JSON.stringify({ lastLogin: '2024-01-15' }),
+  },
+  JSON.stringify(playerData)
+);
+```
+</CodeGroup>
+
+## Update an entry
+
+Update an existing entry:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const updated = await fetchApi(
+  v2.patchCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156',
+    allowMissing: false,  // If true, creates entry if it doesn't exist
+  },
+  {
+    value: {
+      coins: 1500,
+      level: 6,
+      inventory: ['sword', 'shield', 'potion'],
+    },
+    users: ['156'],
+  }
+);
+```
+
+<Warning>
+v2 PATCH operations do not support partial updates. If you don't include `attributes` or `users`, they will be cleared.
+</Warning>
+
+## Increment an entry
+
+Atomically increment a numeric value:
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const result = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryIdIncrement,
+  {
+    universe_id: '123456789',
+    data_store_id: 'Leaderboard',
+    entry_id: 'player_156_score',
+  },
+  {
+    amount: 10,
+    users: ['156'],
+    attributes: {
+      lastUpdated: new Date().toISOString(),
+    },
+  }
+);
+
+console.log('New value:', result.value);
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const result = await fetchApi(
+  v1.datastores.postUniversesUniverseIdDatastoresDatastoreEntriesEntryIncrement,
+  {
+    universeId: 123456789,
+    datastoreName: 'Leaderboard',
+    entryKey: 'player_156_score',
+    incrementBy: 10,
+  }
+);
+```
+</CodeGroup>
+
+## Delete an entry
+
+Mark an entry for deletion (permanent deletion after 30 days):
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+await fetchApi(
+  v2.deleteCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156',
+  }
+);
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+await fetchApi(
+  v1.datastores.deleteUniversesUniverseIdDatastoresDatastoreEntriesEntry,
+  {
+    universeId: 123456789,
+    datastoreName: 'PlayerData',
+    entryKey: 'player_156',
+  }
+);
+```
+</CodeGroup>
+
+## List entries
+
+List all entries in a data store:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// List from all scopes
+const response = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    maxPageSize: 100,
+    filter: 'id.startsWith("player_")',
+  }
+);
+
+for (const entry of response.dataStoreEntries) {
+  console.log(entry.id, entry.path);
+}
+
+// Continue with pagination
+if (response.nextPageToken) {
+  const nextPage = await fetchApi(
+    v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+    {
+      universe_id: '123456789',
+      data_store_id: 'PlayerData',
+      pageToken: response.nextPageToken,
+    }
+  );
+}
+```
+
+## Working with scopes
+
+Scopes allow you to organize entries within a data store:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Create entry in a specific scope
+const entry = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresDataStoreIdScopesScopeIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    scope_id: 'production',
+    id: 'player_156',
+  },
+  {
+    value: { coins: 1000 },
+  }
+);
+
+// Get entry from specific scope
+const scopedEntry = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdScopesScopeIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    scope_id: 'production',
+    entry_id: 'player_156',
+  }
+);
+```
+
+## List entry revisions
+
+Retrieve version history for an entry:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const revisions = await fetchApi(
+  v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryIdListRevisions,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_156',
+    maxPageSize: 50,
+    filter: 'revision_create_time >= 2024-01-01T00:00:00Z && revision_create_time <= 2024-12-31T23:59:59Z',
+  }
+);
+
+for (const revision of revisions.dataStoreEntries) {
+  console.log(`Revision ${revision.revisionId}`);
+  console.log(`Created: ${revision.revisionCreateTime}`);
+  console.log(`State: ${revision.state}`);
+}
+```
+
+## Snapshot data stores
+
+Create a snapshot to preserve current data for 30 days:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const snapshot = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresSnapshot,
+  {
+    universe_id: '123456789',
+  },
+  {}
+);
+
+console.log('New snapshot taken:', snapshot.newSnapshotTaken);
+console.log('Latest snapshot time:', snapshot.latestSnapshotTime);
+```
+
+<Info>
+Snapshots can be taken once per UTC day per experience. Subsequent calls on the same day return the existing snapshot.
+</Info>
+
+## Delete a data store
+
+Schedule a data store for permanent deletion:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Delete (30 day grace period)
+const deleted = await fetchApi(
+  v2.deleteCloudV2UniversesUniverseIdDataStoresDataStoreId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'OldPlayerData',
+  }
+);
+
+console.log('Expires on:', deleted.expireTime);
+
+// Restore before expiry
+const restored = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresDataStoreIdUndelete,
+  {
+    universe_id: '123456789',
+    data_store_id: 'OldPlayerData',
+  },
+  {}
+);
+```
+
+## Best practices
+
+### Use descriptive keys
+
+```typescript
+// Good
+const entry = { entry_id: 'player_156_inventory' };
+
+// Bad
+const entry = { entry_id: 'p156i' };
+```
+
+### Handle versioning
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Store version info in attributes
+const entry = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    id: 'player_156',
+  },
+  {
+    value: { coins: 1000, level: 5 },
+    attributes: {
+      version: '2.0',
+      migrated: 'true',
+      migratedAt: new Date().toISOString(),
+    },
+  }
+);
+```
+
+### Implement retry logic
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function getEntryWithRetry(entryId: string, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    const result = await fetchApi(
+      v2.getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+      {
+        universe_id: '123456789',
+        data_store_id: 'PlayerData',
+        entry_id: entryId,
+      }
+    );
+
+    if (!isAnyErrorResponse(result)) {
+      return result;
+    }
+
+    if (i < maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+    }
+  }
+
+  throw new Error('Failed to get entry after retries');
+}
+```
+
+## Related APIs
+
+- [Messaging APIs](/api/opencloud/messaging) - Cross-server communication
+- [Universe APIs](/api/opencloud/universes) - Experience management
+- [Overview](/api/opencloud/overview) - OpenCloud setup and authentication

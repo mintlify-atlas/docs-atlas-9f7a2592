@@ -1,0 +1,353 @@
+---
+title: "Authentication"
+description: "Core authentication concepts for RoZod"
+---
+
+## Overview
+
+RoZod handles Roblox authentication automatically with comprehensive security features including CSRF tokens, hardware-backed authentication (HBA), and challenge handling. Authentication works differently depending on your environment.
+
+## Browser authentication
+
+In browser environments, RoZod automatically uses the user's Roblox session cookies. No configuration needed:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Cookies sent automatically - works if user is logged into Roblox
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+All requests automatically include:
+- Session cookies from the browser
+- CSRF tokens (retrieved and cached automatically)
+- HBA signatures when required
+
+## Server authentication
+
+For Node.js, Bun, or Deno, use `configureServer()` to set up authentication:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Configure once at application startup
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE
+});
+
+// All subsequent requests include the cookie automatically
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+<Warning>
+Never commit `.ROBLOSECURITY` cookies to version control. Always use environment variables or secure credential storage.
+</Warning>
+
+### Cookie format
+
+Provide the cookie value without the `.ROBLOSECURITY=` prefix:
+
+```typescript
+// Correct:
+configureServer({
+  cookies: '_|WARNING:-DO-NOT-SHARE-THIS.--Cookies...'
+});
+
+// Also works with prefix (automatically stripped):
+configureServer({
+  cookies: '.ROBLOSECURITY=_|WARNING:-DO-NOT-SHARE-THIS...'
+});
+```
+
+## Cookie pools (multiple accounts)
+
+Use multiple Roblox accounts for load distribution or redundancy:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: [
+    process.env.ROBLOX_COOKIE_1,
+    process.env.ROBLOX_COOKIE_2,
+    process.env.ROBLOX_COOKIE_3,
+  ]
+});
+```
+
+### Cookie rotation strategies
+
+Control how cookies are selected from the pool:
+
+```typescript
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'round-robin',  // Default for multiple cookies
+});
+```
+
+Available strategies:
+
+- **`round-robin`** (default for multiple cookies) - Cycles through cookies sequentially: 1 → 2 → 3 → 1...
+- **`random`** - Picks a random cookie for each request
+- **`none`** (default for single cookie) - Uses the first cookie consistently
+
+<Tip>
+Round-robin rotation helps distribute API requests evenly across multiple accounts, useful for rate limiting.
+</Tip>
+
+## User agent rotation
+
+RoZod includes built-in browser user agents applied automatically in server environments:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  // Uses built-in user agents by default
+});
+```
+
+### Custom user agents
+
+Provide your own user agent pool:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  userAgents: ['MyBot/1.0', 'MyService/2.0'],
+  userAgentRotation: 'round-robin',
+});
+```
+
+### Disable user agents
+
+To prevent user agent injection:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  userAgents: [],
+});
+```
+
+## OpenCloud authentication
+
+OpenCloud APIs require API keys instead of cookies:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+configureServer({
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY
+});
+
+// API key automatically included in x-api-key header
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789'
+});
+```
+
+### Combined authentication
+
+Use both cookie-based and OpenCloud authentication:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,     // For classic APIs
+  cloudKey: process.env.ROBLOX_CLOUD_KEY, // For OpenCloud APIs
+});
+```
+
+RoZod automatically applies the correct authentication method based on the endpoint URL.
+
+<Note>
+The API key is only applied to OpenCloud endpoints (URLs containing `/cloud/`). Cookies are used for all other Roblox APIs.
+</Note>
+
+## Cookie rotation handling
+
+Roblox is implementing automatic cookie rotation for security. RoZod detects rotated cookies and updates the internal pool automatically.
+
+### Persisting rotated cookies
+
+Use the `onCookieRefresh` callback to save new cookie values:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // Update your persistent storage
+    await database.updateCookie(poolIndex, newCookie);
+    console.log(`Cookie ${poolIndex} rotated`);
+  }
+});
+```
+
+Callback parameters:
+- **oldCookie** - The cookie value that was rotated
+- **newCookie** - The new cookie value from Roblox
+- **poolIndex** - Index in the cookie pool (0 for single cookie)
+
+### Proactive cookie refresh
+
+Manually refresh cookies before they expire:
+
+```typescript
+import { refreshCookie, getCookies, updateCookie } from 'rozod';
+
+// Refresh the first cookie
+const result = await refreshCookie(0);
+if (result.success) {
+  console.log('New cookie:', result.newCookie);
+  await database.save(result.newCookie);
+} else {
+  console.error('Refresh failed:', result.error);
+}
+
+// Refresh all cookies in pool
+const cookies = getCookies();
+for (let i = 0; i < cookies.length; i++) {
+  await refreshCookie(i);
+}
+```
+
+### Manual cookie updates
+
+Update cookies in the pool manually:
+
+```typescript
+import { updateCookie } from 'rozod';
+
+// Update cookie at index 0
+updateCookie(0, 'new_cookie_value');
+
+// Update a specific account in a pool
+updateCookie(2, 'new_cookie_for_account_3');
+```
+
+## Security features
+
+RoZod automatically handles advanced Roblox security requirements:
+
+### CSRF token management
+
+Cross-Site Request Forgery tokens are required for POST, PUT, PATCH, and DELETE requests. RoZod:
+
+1. Automatically retrieves CSRF tokens from initial requests
+2. Caches tokens per cookie for performance
+3. Retries requests with updated tokens when needed
+4. Handles token rotation transparently
+
+No action required on your part.
+
+### Hardware-backed authentication (HBA)
+
+Roblox uses cryptographic signatures for certain security-sensitive operations. RoZod:
+
+1. Generates and manages crypto key pairs automatically
+2. Signs requests with HBA headers when required
+3. Works in both browser and Node.js environments
+
+<Accordion title="Custom HBA keys (advanced)">
+
+For specialized use cases, provide your own crypto key pair:
+
+```typescript
+import { changeHBAKeys } from 'rozod';
+
+const keyPair = await crypto.subtle.generateKey(
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['sign', 'verify']
+);
+
+changeHBAKeys(keyPair);
+```
+
+This is rarely needed. The default implementation works for most use cases.
+
+</Accordion>
+
+### Challenge handling
+
+Roblox may present challenges like captchas or 2FA prompts. Set up a global challenge handler:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challenge.challengeType === 'captcha') {
+    // Integrate with your captcha solving service
+    const solution = await solveCaptcha(challenge.challengeId);
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  }
+  
+  // Return undefined to skip challenge
+  return undefined;
+});
+```
+
+## Configuration management
+
+View and clear server configuration:
+
+```typescript
+import { getServerConfig, clearServerConfig } from 'rozod';
+
+// Get current configuration (read-only)
+const config = getServerConfig();
+console.log(config.cookies);
+console.log(config.cloudKey);
+console.log(config.cookieRotation);
+
+// Clear all configuration
+clearServerConfig();
+```
+
+## Per-request authentication
+
+Override global configuration for specific requests:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const userInfo = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [123456] },
+  {
+    headers: {
+      'Cookie': `.ROBLOSECURITY=${specificCookie}`,
+      'x-api-key': specificApiKey,
+    }
+  }
+);
+```
+
+<Warning>
+Per-request headers take precedence over `configureServer()` defaults.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+  Learn how to handle errors and API failures gracefully.
+</Card>
+
+<Card title="Endpoints" icon="link" href="/concepts/endpoints">
+  Understand how to use and create typed API endpoints.
+</Card>
+
+</CardGroup>

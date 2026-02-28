@@ -1,0 +1,289 @@
+---
+title: "Handling paginated responses"
+description: "Work with paginated API endpoints efficiently using RoZod helpers"
+---
+
+## Overview
+
+Many Roblox APIs return paginated results with a cursor for fetching additional pages. RoZod provides helper functions to make pagination simple.
+
+## Fetching all pages at once
+
+The `fetchApiPages` function automatically fetches all pages and returns an array of results:
+
+```typescript
+import { fetchApiPages } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+// Automatically fetches all pages
+const allPosts = await fetchApiPages(
+  getGroupsGroupidWallPosts, 
+  { groupId: 11479637 }
+);
+
+console.log(`Found ${allPosts.length} wall posts`);
+```
+
+<Info>
+  `fetchApiPages` continues fetching until there are no more pages or the limit is reached.
+</Info>
+
+### Limiting pages
+
+You can limit the maximum number of pages to fetch:
+
+```typescript
+import { fetchApiPages } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+// Fetch at most 5 pages
+const posts = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 },
+  undefined, // requestOptions
+  5          // limit
+);
+```
+
+## Processing pages incrementally
+
+For large datasets, use `fetchApiPagesGenerator` to process pages one at a time:
+
+```typescript
+import { fetchApiPagesGenerator } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+// Process pages as they arrive
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts, 
+  { groupId: 11479637 }
+);
+
+for await (const page of pages) {
+  console.log(`Processing page with ${page.data.length} posts`);
+  
+  // Process this page's data
+  page.data.forEach(post => {
+    console.log(`Post by ${post.poster.username}: ${post.body}`);
+  });
+}
+```
+
+<Tip>
+  The generator approach is memory-efficient for large datasets since it only keeps one page in memory at a time.
+</Tip>
+
+## Complete examples
+
+<Tabs>
+  <Tab title="Fetch all pages">
+    ```typescript
+    import { fetchApiPages, isAnyErrorResponse } from 'rozod';
+    import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+    async function getAllGroupPosts(groupId: number) {
+      const posts = await fetchApiPages(
+        getGroupsGroupidWallPosts,
+        { groupId }
+      );
+
+      if (isAnyErrorResponse(posts)) {
+        console.error('Failed to fetch posts:', posts.message);
+        return [];
+      }
+
+      // Flatten all pages into a single array
+      return posts.flatMap(page => page.data);
+    }
+
+    const allPosts = await getAllGroupPosts(11479637);
+    console.log(`Total posts: ${allPosts.length}`);
+    ```
+  </Tab>
+  
+  <Tab title="Process incrementally">
+    ```typescript
+    import { fetchApiPagesGenerator } from 'rozod';
+    import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+    async function processGroupPosts(groupId: number) {
+      const pages = fetchApiPagesGenerator(
+        getGroupsGroupidWallPosts,
+        { groupId }
+      );
+
+      let totalProcessed = 0;
+
+      for await (const page of pages) {
+        // Process each post in this page
+        for (const post of page.data) {
+          await processPost(post);
+          totalProcessed++;
+        }
+
+        console.log(`Processed ${totalProcessed} posts so far...`);
+      }
+
+      return totalProcessed;
+    }
+
+    async function processPost(post: any) {
+      // Your processing logic here
+      console.log(`Processing post by ${post.poster.username}`);
+    }
+
+    await processGroupPosts(11479637);
+    ```
+  </Tab>
+  
+  <Tab title="With error handling">
+    ```typescript
+    import { 
+      fetchApiPagesGenerator, 
+      isAnyErrorResponse 
+    } from 'rozod';
+    import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+    async function safelyFetchAllPosts(groupId: number) {
+      const pages = fetchApiPagesGenerator(
+        getGroupsGroupidWallPosts,
+        { groupId }
+      );
+
+      const allPosts = [];
+
+      for await (const page of pages) {
+        // Check for errors on each page
+        if (isAnyErrorResponse(page)) {
+          console.error('Error fetching page:', page.message);
+          break; // Stop on error
+        }
+
+        allPosts.push(...page.data);
+      }
+
+      return allPosts;
+    }
+
+    const posts = await safelyFetchAllPosts(11479637);
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced pagination
+
+### Custom request options
+
+You can pass request options to pagination functions:
+
+```typescript
+import { fetchApiPages } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const posts = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 },
+  {
+    retries: 3,
+    retryDelay: 1000,
+    headers: {
+      'Cookie': '.ROBLOSECURITY=your_cookie'
+    }
+  }
+);
+```
+
+### Early termination
+
+With the generator, you can stop fetching at any time:
+
+```typescript
+import { fetchApiPagesGenerator } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+let foundTarget = false;
+
+for await (const page of pages) {
+  for (const post of page.data) {
+    if (post.body.includes('important keyword')) {
+      console.log('Found the post we were looking for!');
+      foundTarget = true;
+      break;
+    }
+  }
+  
+  if (foundTarget) break; // Stop fetching more pages
+}
+```
+
+<Warning>
+  Always handle potential errors when using pagination. Network issues or API changes can cause failures mid-pagination.
+</Warning>
+
+## Pagination vs batch processing
+
+<CardGroup cols={2}>
+  <Card title="Use pagination when" icon="list">
+    - The API returns results with `nextPageCursor`
+    - You need all results from a multi-page response
+    - You want to process results as they arrive
+  </Card>
+  
+  <Card title="Use batch processing when" icon="layer-group">
+    - You have a large array of inputs
+    - The API has limits on input array size
+    - You need to split requests to avoid rate limits
+    
+    [Learn about batch processing →](/guides/batch-processing)
+  </Card>
+</CardGroup>
+
+## Understanding cursors
+
+Roblox APIs use cursor-based pagination:
+
+1. The initial request returns the first page and a `nextPageCursor`
+2. Pass the cursor in subsequent requests to get the next page
+3. When `nextPageCursor` is `null`, there are no more pages
+
+RoZod handles this automatically in `fetchApiPages` and `fetchApiPagesGenerator`.
+
+```typescript
+// Manual cursor handling (not recommended)
+let cursor = '';
+
+while (true) {
+  const page = await fetchApi(
+    getGroupsGroupidWallPosts,
+    { groupId: 11479637, cursor }
+  );
+  
+  if (isAnyErrorResponse(page)) break;
+  
+  console.log(page.data);
+  
+  if (!page.nextPageCursor) break;
+  cursor = page.nextPageCursor;
+}
+```
+
+<Note>
+  We recommend using `fetchApiPages` or `fetchApiPagesGenerator` instead of manual cursor handling.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Batch processing" icon="layer-group" href="/guides/batch-processing">
+    Learn how to split large requests into batches
+  </Card>
+  
+  <Card title="Basic requests" icon="arrow-left" href="/guides/basic-requests">
+    Back to basic request concepts
+  </Card>
+</CardGroup>

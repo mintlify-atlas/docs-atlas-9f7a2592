@@ -1,0 +1,297 @@
+---
+title: "Games API"
+description: "Fetch game information, thumbnails, server lists, and manage favorites"
+---
+
+The Games API provides access to universe (game) information, server lists, favorites, voting, and private servers.
+
+## Importing endpoints
+
+Import the endpoints you need from the games module:
+
+```typescript
+import { getGames, getGamesUniverseidVotes, postGamesUniverseidFavorites } from 'rozod/endpoints/gamesv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get game details
+
+Fetch detailed information about one or more games by universe ID.
+
+```typescript
+const games = await fetchApi(getGames, {
+  universeIds: [1234567890, 9876543210],
+  languageCode: 'en-us', // Optional
+});
+
+if (!isAnyErrorResponse(games)) {
+  games.data.forEach((game) => {
+    console.log(`${game.name} by ${game.creator.name}`);
+    console.log(`Playing: ${game.playing} | Visits: ${game.visits}`);
+  });
+}
+```
+
+<Note>
+The Games API supports up to 50 universe IDs per request. Use `fetchApiSplit` for larger batches.
+</Note>
+
+## Get game servers
+
+Retrieve active game servers for a place.
+
+```typescript
+import { getGamesPlaceidServersServertype } from 'rozod/endpoints/gamesv1';
+
+const servers = await fetchApi(getGamesPlaceidServersServertype, {
+  placeId: 1234567890,
+  serverType: 0, // 0 = Public, 1 = Friend
+  limit: 25,
+  sortOrder: 2, // 1 = Asc, 2 = Desc
+});
+
+if (!isAnyErrorResponse(servers)) {
+  servers.data.forEach((server) => {
+    console.log(`Server: ${server.id}`);
+    console.log(`Players: ${server.playing}/${server.maxPlayers}`);
+    console.log(`Ping: ${server.ping}ms`);
+  });
+}
+```
+
+## Favorite a game
+
+Add or remove a game from favorites (requires authentication).
+
+```typescript
+import { postGamesUniverseidFavorites } from 'rozod/endpoints/gamesv1';
+
+// Favorite a game
+const result = await fetchApi(postGamesUniverseidFavorites, {
+  universeId: 1234567890,
+  body: {
+    isFavorited: true,
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Game favorited successfully');
+}
+```
+
+## Get favorites count
+
+Check how many favorites a game has.
+
+```typescript
+import { getGamesUniverseidFavoritesCount } from 'rozod/endpoints/gamesv1';
+
+const favCount = await fetchApi(getGamesUniverseidFavoritesCount, {
+  universeId: 1234567890,
+});
+
+if (!isAnyErrorResponse(favCount)) {
+  console.log(`Favorites: ${favCount.favoritesCount}`);
+}
+```
+
+## Vote on games
+
+Get voting information or submit a vote (requires authentication).
+
+```typescript
+import { getGamesUniverseidVotes, patchGamesUniverseidUserVotes } from 'rozod/endpoints/gamesv1';
+
+// Get vote counts
+const votes = await fetchApi(getGamesUniverseidVotes, {
+  universeId: 1234567890,
+});
+
+if (!isAnyErrorResponse(votes)) {
+  console.log(`👍 ${votes.upVotes} | 👎 ${votes.downVotes}`);
+}
+
+// Submit a vote
+const voteResult = await fetchApi(patchGamesUniverseidUserVotes, {
+  universeId: 1234567890,
+  body: {
+    vote: true, // true = upvote, false = downvote
+  },
+});
+```
+
+<Tip>
+You must play a game before you can vote on it. Voting requires authentication.
+</Tip>
+
+## Get game media
+
+Fetch screenshots and videos for a game.
+
+```typescript
+import { getGamesUniverseidMedia } from 'rozod/endpoints/gamesv1';
+
+const media = await fetchApi(getGamesUniverseidMedia, {
+  universeId: 1234567890,
+});
+
+if (!isAnyErrorResponse(media)) {
+  media.data.forEach((item) => {
+    console.log(`Type: ${item.assetType}`);
+    if (item.imageId) {
+      console.log(`Image ID: ${item.imageId}`);
+    }
+  });
+}
+```
+
+## Get place details
+
+Retrieve information about specific places.
+
+```typescript
+import { getGamesMultigetPlaceDetails } from 'rozod/endpoints/gamesv1';
+
+const places = await fetchApi(getGamesMultigetPlaceDetails, {
+  placeIds: [1234567890, 9876543210],
+});
+
+if (!isAnyErrorResponse(places)) {
+  places.forEach((place) => {
+    console.log(`${place.name} - ${place.description}`);
+    console.log(`Builder: ${place.builder}`);
+    console.log(`Playable: ${place.isPlayable}`);
+  });
+}
+```
+
+## Private servers
+
+### Get private servers
+
+List private servers for a place.
+
+```typescript
+import { getGamesPlaceidPrivateServers } from 'rozod/endpoints/gamesv1';
+
+const privateServers = await fetchApi(getGamesPlaceidPrivateServers, {
+  placeId: 1234567890,
+  limit: 10,
+});
+
+if (!isAnyErrorResponse(privateServers)) {
+  privateServers.data.forEach((server) => {
+    console.log(`${server.name} - ${server.owner?.displayName}`);
+    console.log(`Code: ${server.accessCode}`);
+  });
+}
+```
+
+### Check if private servers are enabled
+
+```typescript
+import { getPrivateServersEnabledInUniverseUniverseid } from 'rozod/endpoints/gamesv1';
+
+const enabled = await fetchApi(getPrivateServersEnabledInUniverseUniverseid, {
+  universeId: 1234567890,
+});
+
+if (!isAnyErrorResponse(enabled)) {
+  console.log(`Private servers enabled: ${enabled.privateServersEnabled}`);
+}
+```
+
+### Get my private servers
+
+List all private servers owned by the authenticated user.
+
+```typescript
+import { getPrivateServersMyPrivateServers } from 'rozod/endpoints/gamesv1';
+
+const myServers = await fetchApi(getPrivateServersMyPrivateServers, {
+  privateServersTab: 0, // 0 = Active, 1 = Inactive
+  itemsPerPage: 25,
+});
+
+if (!isAnyErrorResponse(myServers)) {
+  myServers.data.forEach((server) => {
+    console.log(`${server.universeName}: ${server.name}`);
+    console.log(`Expires: ${server.expirationDate}`);
+  });
+}
+```
+
+## Game recommendations
+
+Get recommended games based on a universe.
+
+```typescript
+import { getGamesRecommendationsGameUniverseid } from 'rozod/endpoints/gamesv1';
+
+const recommendations = await fetchApi(getGamesRecommendationsGameUniverseid, {
+  universeId: 1234567890,
+  MaxRows: 10,
+  IsTruncatedResultsEnabled: false,
+  PaginationKey: '',
+});
+
+if (!isAnyErrorResponse(recommendations)) {
+  recommendations.games.forEach((game) => {
+    console.log(`${game.name} - ${game.playerCount} playing`);
+  });
+}
+```
+
+## Batch operations
+
+### Get multiple game votes
+
+```typescript
+import { getGamesVotes } from 'rozod/endpoints/gamesv1';
+
+const votes = await fetchApi(getGamesVotes, {
+  universeIds: [1234567890, 9876543210],
+});
+
+if (!isAnyErrorResponse(votes)) {
+  votes.data.forEach((vote) => {
+    console.log(`Game ${vote.id}: ${vote.upVotes} up, ${vote.downVotes} down`);
+  });
+}
+```
+
+### Get game product info
+
+Fetch purchase information for paid games.
+
+```typescript
+import { getGamesGamesProductInfo } from 'rozod/endpoints/gamesv1';
+
+const products = await fetchApi(getGamesGamesProductInfo, {
+  universeIds: [1234567890],
+});
+
+if (!isAnyErrorResponse(products)) {
+  products.data.forEach((product) => {
+    console.log(`Price: ${product.price} Robux`);
+    console.log(`For sale: ${product.isForSale}`);
+  });
+}
+```
+
+## Available endpoints
+
+All endpoints are exported from `rozod/endpoints/gamesv1`:
+
+- `getGames` - Get game details
+- `getGamesPlaceidServersServertype` - Get game servers
+- `getGamesUniverseidFavorites` - Check favorite status
+- `postGamesUniverseidFavorites` - Favorite/unfavorite
+- `getGamesUniverseidVotes` - Get vote counts
+- `patchGamesUniverseidUserVotes` - Submit a vote
+- `getGamesUniverseidMedia` - Get game media
+- `getGamesMultigetPlaceDetails` - Get place details
+- `getPrivateServersEnabledInUniverseUniverseid` - Check private server availability
+- And more...
+
+For the complete list, refer to the TypeScript types in your IDE.

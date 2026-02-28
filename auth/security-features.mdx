@@ -1,0 +1,360 @@
+---
+title: Security features
+description: Automatic security handling including XCSRF tokens, HBA signatures, and challenge responses
+---
+
+RoZod automatically handles all Roblox security requirements, including CSRF tokens, hardware-backed authentication, and challenge responses. You don't need to implement any of this manually.
+
+## Automatic security features
+
+<CardGroup cols={2}>
+  <Card title="XCSRF tokens" icon="shield-check">
+    Automatic CSRF token retrieval, caching, and retry logic
+  </Card>
+  <Card title="Hardware-backed auth" icon="microchip">
+    Full HBA signature support for enhanced security
+  </Card>
+  <Card title="Challenge handling" icon="puzzle-piece">
+    Built-in support for captcha and 2FA challenges
+  </Card>
+  <Card title="Cookie security" icon="cookie">
+    Secure cookie parsing, validation, and rotation
+  </Card>
+</CardGroup>
+
+## XCSRF token management
+
+Roblox requires CSRF tokens for all write operations (POST, PUT, PATCH, DELETE). RoZod handles this automatically.
+
+### How it works
+
+1. **Initial request**: RoZod makes the request without a token
+2. **Token response**: Roblox returns a 403 with `x-csrf-token` header
+3. **Automatic retry**: RoZod caches the token and retries the request
+4. **Subsequent requests**: Cached token is included automatically
+
+```typescript
+import { fetchApi } from 'rozod';
+import { postGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv1';
+
+// XCSRF token is handled automatically
+const result = await fetchApi(postGroupsGroupidWallPosts, {
+  groupId: 123456,
+  body: { message: 'Hello, world!' }
+});
+```
+
+<Info>
+RoZod automatically retries up to 3 times if CSRF token validation fails. This handles token expiration seamlessly.
+</Info>
+
+### Token caching
+
+Tokens are cached per cookie:
+
+```typescript
+// Internal RoZod logic (for reference)
+const csrfTokenMap: Record<string, string> = {};
+
+// Tokens are keyed by SHA-256 hash of the cookie
+const csrfKey = await getSHA256Hash(cookieValue);
+csrfTokenMap[csrfKey] = csrfToken;
+```
+
+This allows using different tokens for different accounts in cookie pools.
+
+<Note>
+You don't need to manage tokens yourself. RoZod handles all caching and rotation automatically.
+</Note>
+
+## Hardware-backed authentication (HBA)
+
+Roblox uses hardware-backed authentication signatures for enhanced security. RoZod automatically generates these signatures.
+
+### Automatic HBA handling
+
+RoZod uses the [roblox-bat](https://www.npmjs.com/package/roblox-bat) library to generate HBA signatures:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// HBA signatures are generated automatically
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+The following headers are automatically included:
+- `x-hba-client-token`: Browser agent token
+- `x-hba-signature`: ECDSA signature of request
+- `x-hba-timestamp`: Request timestamp
+
+<Info>
+HBA signatures are generated using ECDSA P-256 cryptography and include request method, URL, and body in the signature.
+</Info>
+
+### Browser vs server HBA
+
+RoZod automatically detects the environment:
+
+- **Browser**: Uses Web Crypto API with on-site detection
+- **Node.js/Bun/Deno**: Uses crypto module with automatic key generation
+
+### Custom HBA keys (advanced)
+
+For Node.js environments requiring custom crypto keys:
+
+```typescript
+import { changeHBAKeys } from 'rozod';
+
+// Generate custom ECDSA P-256 key pair
+const keyPair = await crypto.subtle.generateKey(
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['sign', 'verify']
+);
+
+changeHBAKeys(keyPair);
+```
+
+<Warning>
+Custom HBA keys are rarely needed. Only use this if you have specific cryptographic requirements.
+</Warning>
+
+## Challenge handling
+
+Roblox may present authentication challenges like captchas or 2FA. RoZod detects these and invokes your handler.
+
+### Configure challenge handler
+
+Set up a global challenge handler:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  console.log('Challenge type:', challenge.challengeType);
+  console.log('Challenge ID:', challenge.challengeId);
+  
+  if (challenge.challengeType === 'captcha') {
+    // Solve captcha (e.g., using a service or user interaction)
+    const solution = await solveCaptcha(challenge.challengeId);
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  }
+  
+  // Return undefined to skip challenge
+  return undefined;
+});
+```
+
+<Info>
+See [Challenge handling](/auth/challenge-handling) for detailed implementation guides and examples.
+</Info>
+
+### Challenge flow
+
+1. **Initial request**: RoZod makes the request
+2. **Challenge response**: Roblox returns challenge headers
+3. **Handler invocation**: Your challenge handler is called
+4. **Automatic retry**: RoZod retries with challenge solution
+
+```typescript
+// RoZod automatically includes challenge headers:
+headers.set('rblx-challenge-type', challengeData.challengeType);
+headers.set('rblx-challenge-id', challengeData.challengeId);
+headers.set('rblx-challenge-metadata', challengeData.challengeBase64Metadata);
+```
+
+<Warning>
+RoZod retries up to 3 times for challenges. Returning `undefined` from the handler skips the challenge and stops retries.
+</Warning>
+
+## Cookie security
+
+RoZod implements secure cookie handling:
+
+### Cookie parsing
+
+Safely extracts `.ROBLOSECURITY` cookies:
+
+```typescript
+// Internal RoZod logic (for reference)
+function extractRoblosecurityFromSetCookie(setCookieHeader: string): string | undefined {
+  // Handles both with and without _| prefix
+  const match = setCookieHeader.match(/\.ROBLOSECURITY=(_\|[^|]+\|_)?([^;]+)/);
+  return match ? (match[1] ? match[1] + match[2] : match[2]) : undefined;
+}
+```
+
+### Cookie validation
+
+RoZod validates cookies before use:
+- Checks for proper `.ROBLOSECURITY` format
+- Handles warning prefixes (`_|WARNING:-DO-NOT-SHARE-THIS...`)
+- Detects expired or invalid cookies
+
+### Cookie rotation detection
+
+RoZod automatically detects when Roblox rotates cookies:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // Persist new cookie value
+    await db.updateCookie(poolIndex, newCookie);
+    console.log('Cookie rotated!');
+  }
+});
+```
+
+<Info>
+See [Cookie rotation](/auth/cookie-rotation) for detailed information on handling cookie rotation.
+</Info>
+
+## Request signing
+
+For authenticated requests, RoZod automatically:
+
+1. **Adds authentication headers**: Cookie or API key based on endpoint
+2. **Includes user agent**: Realistic browser user agents in server environments
+3. **Generates HBA signatures**: Hardware-backed authentication signatures
+4. **Adds CSRF tokens**: For write operations
+5. **Sets credentials mode**: `credentials: 'include'` for cross-origin requests
+
+```typescript
+// Internal RoZod logic (for reference)
+const response = await fetch(url, {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'cookie': `.ROBLOSECURITY=${cookie}`,
+    'user-agent': selectedUserAgent,
+    'x-csrf-token': cachedToken,
+    'x-hba-client-token': hbaClientToken,
+    'x-hba-signature': hbaSignature,
+    'x-hba-timestamp': timestamp,
+  },
+  body: JSON.stringify(data)
+});
+```
+
+## Error handling
+
+Handle security-related errors:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { postGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv1';
+
+const result = await fetchApi(postGroupsGroupidWallPosts, {
+  groupId: 123456,
+  body: { message: 'Hello!' }
+});
+
+if (isAnyErrorResponse(result)) {
+  if (result.message.includes('Token Validation Failed')) {
+    // CSRF token issue (RoZod retried 3 times)
+    console.error('CSRF validation failed after retries');
+  } else if (result.message.includes('challenge')) {
+    // Challenge not handled
+    console.error('Authentication challenge required');
+  }
+}
+```
+
+## Security best practices
+
+<AccordionGroup>
+  <Accordion title="Never share cookies">
+    `.ROBLOSECURITY` cookies provide full access to Roblox accounts. Never commit them to version control, share them, or expose them in logs.
+  </Accordion>
+  
+  <Accordion title="Use environment variables">
+    Store all sensitive credentials (cookies, API keys) in environment variables or secret management systems.
+  </Accordion>
+  
+  <Accordion title="Implement cookie rotation handlers">
+    Always configure `onCookieRefresh` callbacks to persist new cookie values when Roblox rotates them.
+  </Accordion>
+  
+  <Accordion title="Monitor for security errors">
+    Log security-related errors to detect issues like expired cookies, invalid tokens, or failed challenges.
+  </Accordion>
+  
+  <Accordion title="Use dedicated accounts">
+    Create separate Roblox accounts for bots/services instead of using personal accounts. This provides better isolation.
+  </Accordion>
+  
+  <Accordion title="Implement rate limiting">
+    Respect Roblox's rate limits to avoid account restrictions or bans. Use cookie pools for high-volume applications.
+  </Accordion>
+</AccordionGroup>
+
+## Debugging security issues
+
+### Enable verbose logging
+
+Log all security-related operations:
+
+```typescript
+import { fetchApi } from 'rozod';
+
+const result = await fetchApi(endpoint, params, {
+  // Use returnRaw to inspect headers
+  returnRaw: true
+});
+
+console.log('Response headers:', result.headers);
+console.log('CSRF token:', result.headers.get('x-csrf-token'));
+```
+
+### Check HBA signatures
+
+Verify HBA headers are included:
+
+```typescript
+// Make a request and inspect raw response
+const response = await fetchApi(endpoint, params, { returnRaw: true });
+
+// Check request headers (in browser DevTools or by logging)
+console.log('HBA client token:', response.headers.get('x-hba-client-token'));
+console.log('HBA signature:', response.headers.get('x-hba-signature'));
+```
+
+### Test challenge handling
+
+Verify your challenge handler is working:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  console.log('Challenge received:', challenge);
+  // Test without solving to see the error
+  return undefined;
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Challenge handling" icon="puzzle-piece" href="/auth/challenge-handling">
+    Implement captcha and 2FA handlers
+  </Card>
+  <Card title="Cookie rotation" icon="arrows-rotate" href="/auth/cookie-rotation">
+    Handle automatic cookie rotation
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle security-related errors
+  </Card>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Configure server-side authentication
+  </Card>
+</CardGroup>

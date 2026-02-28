@@ -1,0 +1,447 @@
+---
+title: "Using OpenCloud APIs"
+description: "Access Roblox's modern OpenCloud APIs with the same RoZod interface"
+---
+
+## Overview
+
+Roblox OpenCloud provides modern, RESTful APIs for programmatic access to Roblox services. RoZod includes 95+ OpenCloud endpoints with the same type-safe interface as classic APIs.
+
+## What is OpenCloud?
+
+OpenCloud is Roblox's newer API platform hosted at `apis.roblox.com` that uses API keys instead of cookies for authentication. It offers:
+
+- Modern RESTful design
+- Official Roblox support
+- API key authentication
+- DataStore access
+- Messaging service
+- Universe management
+- User notifications
+
+<Info>
+  OpenCloud endpoints are distinguished by URLs containing `/cloud/` in the path.
+</Info>
+
+## Basic usage
+
+Import OpenCloud endpoints from `rozod/lib/opencloud`:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Get universe details through OpenCloud
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+console.log(universeInfo.displayName);
+console.log(universeInfo.description);
+```
+
+## Authentication
+
+OpenCloud uses API keys instead of cookies. Set up authentication once at startup:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Configure OpenCloud API key
+configureServer({ 
+  cloudKey: 'your_opencloud_api_key_here' 
+});
+
+// All OpenCloud requests automatically include x-api-key header
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+```
+
+<Tip>
+  Get your OpenCloud API keys from the [Creator Dashboard](https://create.roblox.com/credentials).
+</Tip>
+
+### Per-request API keys
+
+Alternatively, pass the API key per request:
+
+```typescript
+const universeInfo = await fetchApi(
+  v2.getCloudV2UniversesUniverseId,
+  { universe_id: '123456789' },
+  {
+    headers: {
+      'x-api-key': 'your_opencloud_api_key_here'
+    }
+  }
+);
+```
+
+### Combined configuration
+
+Use both classic cookies and OpenCloud keys together:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: ['account1', 'account2'],  // For classic *.roblox.com APIs
+  cloudKey: 'your_opencloud_key',     // For apis.roblox.com/cloud/*
+});
+```
+
+<Note>
+  The API key is only applied to OpenCloud endpoints. Classic APIs continue using cookies.
+</Note>
+
+## DataStores
+
+Access and modify DataStore entries:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { 
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId
+} from 'rozod/lib/opencloud/v2/cloud';
+
+// List DataStore entries
+const entries = await fetchApi(
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+  }
+);
+
+console.log(entries);
+
+// Get a specific entry
+const entry = await fetchApi(
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+    entry_id: 'player_12345',
+  }
+);
+
+console.log(entry);
+```
+
+## Complete examples
+
+<Tabs>
+  <Tab title="Universe info">
+    Get details about a universe:
+    
+    ```typescript
+    import { fetchApi, isAnyErrorResponse } from 'rozod';
+    import { v2 } from 'rozod/lib/opencloud';
+
+    async function getUniverseDetails(universeId: string) {
+      const info = await fetchApi(
+        v2.getCloudV2UniversesUniverseId,
+        { universe_id: universeId }
+      );
+
+      if (isAnyErrorResponse(info)) {
+        console.error('Failed to fetch universe:', info.message);
+        return null;
+      }
+
+      return {
+        name: info.displayName,
+        description: info.description,
+        created: info.createTime,
+        updated: info.updateTime,
+      };
+    }
+
+    const details = await getUniverseDetails('123456789');
+    console.log(details);
+    ```
+  </Tab>
+  
+  <Tab title="DataStore operations">
+    Read and write DataStore data:
+    
+    ```typescript
+    import { fetchApi } from 'rozod';
+    import {
+      getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+      postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries
+    } from 'rozod/lib/opencloud/v2/cloud';
+
+    const UNIVERSE_ID = '123456789';
+    const DATASTORE_ID = 'PlayerData';
+
+    // Read data
+    async function getPlayerData(playerId: string) {
+      const entry = await fetchApi(
+        getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+        {
+          universe_id: UNIVERSE_ID,
+          data_store_id: DATASTORE_ID,
+          entry_id: `player_${playerId}`,
+        }
+      );
+
+      return entry;
+    }
+
+    // Write data
+    async function savePlayerData(playerId: string, data: any) {
+      const result = await fetchApi(
+        postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+        {
+          universe_id: UNIVERSE_ID,
+          data_store_id: DATASTORE_ID,
+          entry_id: `player_${playerId}`,
+          body: data,
+        }
+      );
+
+      return result;
+    }
+
+    const playerData = await getPlayerData('12345');
+    console.log(playerData);
+
+    await savePlayerData('12345', { level: 10, coins: 500 });
+    ```
+  </Tab>
+  
+  <Tab title="With error handling">
+    Robust error handling:
+    
+    ```typescript
+    import { fetchApi, isAnyErrorResponse } from 'rozod';
+    import { v2 } from 'rozod/lib/opencloud';
+
+    async function safeGetUniverse(universeId: string) {
+      try {
+        const info = await fetchApi(
+          v2.getCloudV2UniversesUniverseId,
+          { universe_id: universeId },
+          { throwOnError: true }
+        );
+
+        return info;
+      } catch (error) {
+        console.error('OpenCloud error:', error);
+        throw new Error(`Failed to fetch universe ${universeId}`);
+      }
+    }
+
+    // Alternative: union type approach
+    async function safeGetUniverseAlt(universeId: string) {
+      const info = await fetchApi(
+        v2.getCloudV2UniversesUniverseId,
+        { universe_id: universeId }
+      );
+
+      if (isAnyErrorResponse(info)) {
+        throw new Error(`API error: ${info.message}`);
+      }
+
+      return info;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Available endpoints
+
+RoZod includes OpenCloud endpoints organized by version:
+
+### V2 endpoints
+
+Import from `rozod/lib/opencloud/v2/cloud`:
+
+```typescript
+import {
+  // Universe management
+  getCloudV2UniversesUniverseId,
+  
+  // DataStore operations
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  postCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  patchCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  deleteCloudV2UniversesUniverseIdDataStoresDataStoreIdEntriesEntryId,
+  
+  // And many more...
+} from 'rozod/lib/opencloud/v2/cloud';
+```
+
+Or use the convenience import:
+
+```typescript
+import { v2 } from 'rozod/lib/opencloud';
+
+// Access endpoints as properties
+const info = await fetchApi(v2.getCloudV2UniversesUniverseId, {...});
+```
+
+### V1 endpoints
+
+Some services still use V1:
+
+```typescript
+import { v1 } from 'rozod/lib/opencloud';
+
+// Use V1 endpoints
+const result = await fetchApi(v1.someV1Endpoint, {...});
+```
+
+## Scopes and permissions
+
+OpenCloud API keys have specific scopes. Ensure your key has the required permissions:
+
+```typescript
+import { v2 } from 'rozod/lib/opencloud';
+
+// Each endpoint documents required scopes
+console.log(v2.getCloudV2UniversesUniverseId.scopes);
+// ['universe.read']
+```
+
+<Warning>
+  If your API key lacks required scopes, requests will fail with a 403 Forbidden error.
+</Warning>
+
+## OpenCloud vs classic APIs
+
+<CardGroup cols={2}>
+  <Card title="OpenCloud" icon="cloud">
+    **Advantages:**
+    - Official Roblox support
+    - Modern REST design
+    - API key authentication
+    - Better documentation
+    
+    **Use for:**
+    - New projects
+    - DataStore access
+    - Server-side operations
+  </Card>
+  
+  <Card title="Classic APIs" icon="server">
+    **Advantages:**
+    - 650+ endpoints
+    - More features available
+    - Browser compatibility
+    
+    **Use for:**
+    - Features not in OpenCloud
+    - Browser extensions
+    - Legacy integrations
+  </Card>
+</CardGroup>
+
+## Error handling
+
+OpenCloud errors follow the same pattern as classic APIs:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const result = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+if (isAnyErrorResponse(result)) {
+  // Handle common OpenCloud errors
+  if (result.message.includes('403')) {
+    console.error('API key lacks required permissions');
+  } else if (result.message.includes('404')) {
+    console.error('Universe not found');
+  } else if (result.message.includes('401')) {
+    console.error('Invalid or missing API key');
+  } else {
+    console.error('OpenCloud error:', result.message);
+  }
+}
+```
+
+## Pagination
+
+Some OpenCloud endpoints support pagination:
+
+```typescript
+import { fetchApiPages } from 'rozod';
+import { getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries } from 'rozod/lib/opencloud/v2/cloud';
+
+// Automatically fetch all pages
+const allEntries = await fetchApiPages(
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+  }
+);
+
+console.log(`Total entries: ${allEntries.length}`);
+```
+
+<Note>
+  See the [pagination guide](/guides/pagination) for more details on handling paginated responses.
+</Note>
+
+## Best practices
+
+<Steps>
+  <Step title="Secure your API keys">
+    Never commit API keys to version control. Use environment variables:
+    
+    ```typescript
+    import { configureServer } from 'rozod';
+
+    configureServer({
+      cloudKey: process.env.ROBLOX_CLOUD_KEY,
+    });
+    ```
+  </Step>
+  
+  <Step title="Use appropriate scopes">
+    Create API keys with minimal required scopes for security:
+    
+    - Read-only operations: `universe.read`, `datastore:read`
+    - Write operations: Add `datastore:write` only when needed
+  </Step>
+  
+  <Step title="Handle rate limits">
+    OpenCloud has rate limits. Implement retry logic:
+    
+    ```typescript
+    const result = await fetchApi(
+      v2.getCloudV2UniversesUniverseId,
+      { universe_id: '123456789' },
+      {
+        retries: 3,
+        retryDelay: 1000,
+      }
+    );
+    ```
+  </Step>
+  
+  <Step title="Monitor API usage">
+    Track API calls to stay within quotas and identify issues early.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Server configuration" icon="server" href="/guides/server-configuration">
+    Learn about configuring authentication
+  </Card>
+  
+  <Card title="Custom endpoints" icon="puzzle-piece" href="/guides/custom-endpoints">
+    Define your own OpenCloud-style endpoints
+  </Card>
+</CardGroup>

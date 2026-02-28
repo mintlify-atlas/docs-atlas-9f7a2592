@@ -1,0 +1,320 @@
+---
+title: fetchApiSplit
+description: Split large requests into multiple smaller batches to avoid API limits
+---
+
+## Overview
+
+The `fetchApiSplit` function automatically splits array parameters into multiple smaller requests when they exceed specified limits. This is useful for Roblox endpoints that have maximum array size limits (e.g., "max 100 universe IDs per request").
+
+All split requests are executed in parallel using `Promise.all()` for optimal performance.
+
+## Signature
+
+```typescript
+async function fetchApiSplit<S extends EndpointSchema, T = ExtractResponse<S>>(
+  endpoint: S,
+  params: ExtractParams<S>,
+  max?: Partial<{ [K in keyof ExtractParams<S>]: number }>,
+  transform?: (response: ExtractResponse<S>) => T,
+  requestOptions?: RequestOptions
+): Promise<T[] | AnyError>
+```
+
+## Parameters
+
+<ParamField path="endpoint" type="EndpointSchema" required>
+  The endpoint definition object to make requests to.
+</ParamField>
+
+<ParamField path="params" type="ExtractParams<S>" required>
+  Parameters to pass to the endpoint. Array parameters will be split according to the `max` configuration.
+</ParamField>
+
+<ParamField path="max" type="Partial<Record<string, number>>">
+  Object specifying the maximum size for each array parameter. Keys are parameter names, values are the maximum items per request.
+  
+  Example: `{ universeIds: 100 }` means split `universeIds` into chunks of 100.
+  
+  If not provided or empty, makes a single request without splitting.
+</ParamField>
+
+<ParamField path="transform" type="(response: ExtractResponse<S>) => T">
+  Optional function to transform each response before returning. By default, returns the full response.
+  
+  Useful for extracting just the `data` field or mapping responses to a different format.
+</ParamField>
+
+<ParamField path="requestOptions" type="RequestOptions">
+  Additional options applied to each request. See [fetchApi](/api/fetch-api) for available options.
+</ParamField>
+
+## Return value
+
+Returns a `Promise` that resolves to:
+
+- **Success**: Array of transformed results (one per batch)
+- **Error**: An `AnyError` object if any request fails (short-circuits on first error)
+
+## Examples
+
+### Basic splitting
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+// Request 500 universe IDs, split into batches of 100
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ... 500 IDs total */] },
+  { universeIds: 100 }
+);
+
+// Results is an array of 5 responses (500 / 100 = 5 batches)
+if (!isAnyErrorResponse(results)) {
+  console.log(`Fetched ${results.length} batches`);
+  results.forEach((batch, index) => {
+    console.log(`Batch ${index + 1}:`, batch.data);
+  });
+}
+```
+
+### With transform function
+
+Extract just the `data` field from each response:
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, 4, 5] },
+  { universeIds: 100 },
+  (response) => response.data // Extract just the data array
+);
+
+// Now results is an array of data arrays
+if (!isAnyErrorResponse(results)) {
+  // results: Array<Array<GameIconData>>
+  results.forEach((dataArray, index) => {
+    console.log(`Batch ${index + 1} has ${dataArray.length} icons`);
+  });
+}
+```
+
+### Flatten results
+
+Combine all batches into a single array:
+
+```typescript
+import { fetchApiSplit, isAnyErrorResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const batchedResults = await fetchApiSplit(
+  getUsersUserdetails,
+  { userIds: [1, 2, 3, /* ... 500 user IDs */] },
+  { userIds: 100 },
+  (response) => response.data
+);
+
+if (!isAnyErrorResponse(batchedResults)) {
+  // Flatten all batches into a single array
+  const allUsers = batchedResults.flat();
+  console.log(`Fetched ${allUsers.length} total users`);
+}
+```
+
+### Multiple array parameters
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { someEndpoint } from 'rozod/lib/endpoints/somev1';
+
+const results = await fetchApiSplit(
+  someEndpoint,
+  {
+    userIds: [1, 2, 3, /* ... 200 IDs */],
+    groupIds: [10, 20, 30, /* ... 150 IDs */]
+  },
+  {
+    userIds: 50,   // Split userIds into chunks of 50
+    groupIds: 25   // Split groupIds into chunks of 25
+  }
+);
+```
+
+### With request options
+
+```typescript
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ... */] },
+  { universeIds: 100 },
+  (response) => response.data,
+  {
+    retries: 3,
+    retryDelay: 1000,
+    throwOnError: true
+  }
+);
+```
+
+### Without splitting
+
+```typescript
+// If you don't provide 'max', it makes a single request
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3] }
+  // No max parameter
+);
+
+// results is still an array, but with only one element
+if (!isAnyErrorResponse(results)) {
+  console.log(results.length); // 1
+  console.log(results[0]); // Single response object
+}
+```
+
+## Advanced usage
+
+### Custom transformation
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+interface GameIcon {
+  universeId: number;
+  iconUrl: string;
+}
+
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ... */] },
+  { universeIds: 100 },
+  (response) => {
+    // Transform each item in the response
+    return response.data.map(item => ({
+      universeId: item.targetId,
+      iconUrl: item.imageUrl
+    }));
+  }
+);
+
+// results: Array<Array<GameIcon>>
+if (!isAnyErrorResponse(results)) {
+  const allIcons = results.flat();
+  console.log('All icons:', allIcons);
+}
+```
+
+### Error handling
+
+```typescript
+import { fetchApiSplit, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ... */] },
+  { universeIds: 100 }
+);
+
+if (isAnyErrorResponse(results)) {
+  console.error('Request failed:', results.message);
+  console.error('Error code:', results.code);
+} else {
+  console.log(`Successfully fetched ${results.length} batches`);
+  
+  // Process results
+  results.forEach(batch => {
+    console.log(batch.data);
+  });
+}
+```
+
+### With throw on error
+
+```typescript
+try {
+  const results = await fetchApiSplit(
+    getGamesIcons,
+    { universeIds: [1, 2, 3, /* ... */] },
+    { universeIds: 100 },
+    (response) => response.data,
+    { throwOnError: true }
+  );
+  
+  // results is guaranteed to be successful here
+  const allData = results.flat();
+  console.log('All data:', allData);
+} catch (error) {
+  console.error('Request failed:', (error as Error).message);
+}
+```
+
+## How it works
+
+1. The function examines the `max` parameter to determine which array parameters need splitting
+2. For each specified parameter, it splits the array into chunks of the specified size
+3. Creates parameter objects for each batch
+4. Executes all requests in parallel using `Promise.all()`
+5. Applies the optional transform function to each response
+6. Returns an array of transformed results
+7. Short-circuits and returns the first error if any request fails
+
+## Type safety
+
+The function maintains full type safety:
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+// Without transform - array of full responses
+const fullResults = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3] },
+  { universeIds: 100 }
+);
+
+if (!isAnyErrorResponse(fullResults)) {
+  fullResults.forEach(response => {
+    response.data // ✓ Typed correctly
+  });
+}
+
+// With transform - array of transformed results
+const dataResults = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3] },
+  { universeIds: 100 },
+  (response) => response.data
+);
+
+if (!isAnyErrorResponse(dataResults)) {
+  dataResults.forEach(dataArray => {
+    // dataArray is typed as the data field type
+    dataArray.forEach(item => {
+      item.imageUrl // ✓ Typed correctly
+    });
+  });
+}
+```
+
+<Note>
+  All split requests are executed in parallel for optimal performance. The function waits for all requests to complete before returning.
+</Note>
+
+<Warning>
+  If any single request fails, the entire function returns an error. Consider using individual `fetchApi` calls with custom error handling if you need more granular control.
+</Warning>
+
+## Related functions
+
+- [fetchApi](/api/fetch-api) - Core function for single requests
+- [fetchApiPages](/api/fetch-api-pages) - Handle paginated responses
+- [fetchApiPagesGenerator](/api/fetch-api-pages) - Process pages one at a time

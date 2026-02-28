@@ -1,0 +1,248 @@
+---
+title: "Endpoints"
+description: "Understanding how endpoints work in RoZod"
+---
+
+## What are endpoints?
+
+In RoZod, endpoints are typed definitions that describe a specific Roblox API endpoint. Each endpoint includes its HTTP method, path, parameters, request body schema, and response schema, all validated using [Zod](https://zod.dev) for complete type safety.
+
+## Endpoint structure
+
+Every RoZod endpoint contains the following information:
+
+- **method** - The HTTP method (GET, POST, PUT, DELETE, PATCH)
+- **path** - The URL path with optional path parameters (e.g., `/v1/users/:userId`)
+- **baseUrl** - The base domain for the API (e.g., `https://users.roblox.com`)
+- **parameters** - Optional query or path parameters as Zod schemas
+- **body** - Optional request body schema
+- **response** - The expected response schema
+- **serializationMethod** - Optional rules for array parameter serialization
+- **requestFormat** - Format type (json, text, or form-data)
+
+## Using pre-built endpoints
+
+RoZod includes **750+ pre-built endpoints** covering both classic Roblox APIs and OpenCloud APIs. These are code-generated from official Roblox documentation.
+
+### Classic Roblox APIs
+
+Import endpoints from the `rozod/lib/endpoints` directory:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const userInfo = await fetchApi(getUsersUserdetails, {
+  userIds: [1, 123456]
+});
+
+const gameIcons = await fetchApi(getGamesIcons, {
+  universeIds: [1534453623, 65241]
+});
+```
+
+### OpenCloud APIs
+
+Import OpenCloud endpoints from `rozod/lib/opencloud`:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789'
+});
+
+console.log(universeInfo.displayName);
+```
+
+## Creating custom endpoints
+
+You can define custom endpoints with full type safety using the `endpoint` helper:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const myCustomEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/custom/:customId',
+  baseUrl: 'https://my-api.example.com',
+  parameters: {
+    customId: z.string(),
+    filter: z.string().optional(),
+    limit: z.number().default(10),
+  },
+  response: z.object({
+    success: z.boolean(),
+    data: z.array(z.string()),
+  }),
+});
+
+const response = await fetchApi(myCustomEndpoint, {
+  customId: '123',
+  filter: 'active'
+});
+```
+
+### Path parameters
+
+Path parameters are defined in the `path` property using colon notation and validated in the `parameters` object:
+
+```typescript
+const getUserById = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://users.roblox.com',
+  parameters: {
+    userId: z.number().int(),
+  },
+  response: z.object({
+    id: z.number(),
+    name: z.string(),
+    displayName: z.string(),
+  }),
+});
+
+const user = await fetchApi(getUserById, { userId: 123456 });
+```
+
+RoZod automatically replaces `:userId` in the path with the provided value.
+
+### Query parameters
+
+Parameters not found in the path become query string parameters:
+
+```typescript
+const searchUsers = endpoint({
+  method: 'GET',
+  path: '/v1/users/search',
+  baseUrl: 'https://users.roblox.com',
+  parameters: {
+    keyword: z.string(),
+    limit: z.number().default(10),
+  },
+  response: z.object({
+    data: z.array(z.object({
+      id: z.number(),
+      name: z.string(),
+    }))
+  }),
+});
+
+// Makes request to: /v1/users/search?keyword=alex&limit=25
+const results = await fetchApi(searchUsers, {
+  keyword: 'alex',
+  limit: 25
+});
+```
+
+### Request body
+
+For POST, PUT, and PATCH requests, define a body schema:
+
+```typescript
+const updateDescription = endpoint({
+  method: 'POST',
+  path: '/v1/description',
+  baseUrl: 'https://users.roblox.com',
+  body: z.object({
+    description: z.string(),
+  }),
+  response: z.object({
+    description: z.string(),
+  }),
+});
+
+const result = await fetchApi(updateDescription, undefined, {
+  body: { description: 'New description!' }
+});
+```
+
+<Note>
+When an endpoint has both parameters and a body, pass the body within the parameters object using the `body` key.
+</Note>
+
+## Array serialization
+
+Some Roblox endpoints require specific array serialization formats. Use `serializationMethod` to control this:
+
+```typescript
+const myEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/items',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    ids: z.array(z.number()),
+  },
+  serializationMethod: {
+    ids: { style: 'form', explode: true }
+  },
+  response: z.object({ data: z.array(z.any()) }),
+});
+
+// With explode: true, generates: /v1/items?ids=1&ids=2&ids=3
+// Without explode: generates: /v1/items?ids=1,2,3
+```
+
+Supported styles:
+- `form` - Comma-separated (default)
+- `spaceDelimited` - Space-separated
+- `pipeDelimited` - Pipe-separated
+
+## Default values
+
+Use Zod's `.default()` to provide default parameter values:
+
+```typescript
+const getItems = endpoint({
+  method: 'GET',
+  path: '/v1/items',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    limit: z.number().default(25),
+    sortOrder: z.enum(['Asc', 'Desc']).default('Desc'),
+  },
+  response: z.object({ data: z.array(z.any()) }),
+});
+
+// Uses defaults: limit=25, sortOrder=Desc
+const items = await fetchApi(getItems, {});
+```
+
+## OpenCloud metadata
+
+OpenCloud endpoints may include additional metadata:
+
+```typescript
+const openCloudEndpoint = endpoint({
+  method: 'GET',
+  path: '/cloud/v2/universes/:universe_id',
+  baseUrl: 'https://apis.roblox.com',
+  scopes: ['universe.read'],
+  parameters: {
+    universe_id: z.string(),
+  },
+  response: z.object({
+    path: z.string(),
+    displayName: z.string(),
+  }),
+});
+```
+
+The `scopes` property documents required OAuth scopes for OpenCloud endpoints.
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Authentication" icon="lock" href="/concepts/authentication">
+  Learn how RoZod handles authentication for both browser and server environments.
+</Card>
+
+<Card title="Type safety" icon="shield" href="/concepts/type-safety">
+  Explore TypeScript type inference and validation features.
+</Card>
+
+</CardGroup>

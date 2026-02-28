@@ -1,0 +1,535 @@
+---
+title: "Defining custom endpoints"
+description: "Create your own type-safe API endpoints with full RoZod integration"
+---
+
+## Overview
+
+RoZod includes 750+ pre-built endpoints, but you can define custom endpoints for your own APIs or undocumented Roblox endpoints. Custom endpoints get the same type safety and features as built-in ones.
+
+## Basic custom endpoint
+
+Create a custom endpoint using the `endpoint` helper and Zod schemas:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const myCustomEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/custom/:customId',
+  baseUrl: 'https://my-api.example.com',
+  parameters: {
+    customId: z.string(),
+    optional: z.string().optional(),
+  },
+  response: z.object({
+    success: z.boolean(),
+    data: z.array(z.string()),
+  }),
+});
+
+const response = await fetchApi(myCustomEndpoint, { customId: '123' });
+```
+
+<Info>
+  Custom endpoints work with all RoZod functions: `fetchApi`, `fetchApiSplit`, `fetchApiPages`, and `fetchApiPagesGenerator`.
+</Info>
+
+## Endpoint configuration
+
+### Required fields
+
+Every endpoint needs these properties:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const myEndpoint = endpoint({
+  method: 'GET',              // HTTP method
+  path: '/v1/users/:userId',  // URL path with params
+  baseUrl: 'https://api.example.com',
+  response: z.object({        // Response schema
+    id: z.number(),
+    name: z.string(),
+  }),
+});
+```
+
+### HTTP methods
+
+Support for all standard HTTP methods:
+
+<CodeGroup>
+```typescript GET request
+const getEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number(),
+  },
+  response: z.object({
+    id: z.number(),
+    name: z.string(),
+  }),
+});
+```
+
+```typescript POST request
+const createEndpoint = endpoint({
+  method: 'POST',
+  path: '/v1/users',
+  baseUrl: 'https://api.example.com',
+  body: z.object({
+    name: z.string(),
+    email: z.string().email(),
+  }),
+  response: z.object({
+    id: z.number(),
+    created: z.boolean(),
+  }),
+});
+```
+
+```typescript PUT request
+const updateEndpoint = endpoint({
+  method: 'PUT',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number(),
+  },
+  body: z.object({
+    name: z.string(),
+  }),
+  response: z.object({
+    success: z.boolean(),
+  }),
+});
+```
+
+```typescript DELETE request
+const deleteEndpoint = endpoint({
+  method: 'DELETE',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number(),
+  },
+  response: z.object({
+    deleted: z.boolean(),
+  }),
+});
+```
+</CodeGroup>
+
+## Parameters
+
+### Path parameters
+
+Define path parameters with `:paramName` in the path:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getUserEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId/posts/:postId',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number(),
+    postId: z.number(),
+  },
+  response: z.object({
+    title: z.string(),
+    body: z.string(),
+  }),
+});
+
+// Path params are type-checked
+const post = await fetchApi(getUserEndpoint, {
+  userId: 123,
+  postId: 456,
+});
+```
+
+### Query parameters
+
+Any parameter not in the path becomes a query parameter:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const searchEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/search',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    query: z.string(),
+    limit: z.number().optional(),
+    offset: z.number().optional(),
+  },
+  response: z.object({
+    results: z.array(z.string()),
+  }),
+});
+
+// Becomes: /v1/search?query=test&limit=10&offset=0
+const results = await fetchApi(searchEndpoint, {
+  query: 'test',
+  limit: 10,
+  offset: 0,
+});
+```
+
+### Optional parameters
+
+Use Zod's `.optional()` for optional parameters:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const endpoint = endpoint({
+  method: 'GET',
+  path: '/v1/data',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    required: z.string(),
+    optional: z.string().optional(),
+    withDefault: z.number().default(10),
+  },
+  response: z.object({
+    data: z.array(z.string()),
+  }),
+});
+```
+
+### Array parameters
+
+Arrays are automatically serialized:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getUsersEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/users',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userIds: z.array(z.number()),
+  },
+  response: z.object({
+    users: z.array(z.object({
+      id: z.number(),
+      name: z.string(),
+    })),
+  }),
+});
+
+// Becomes: /v1/users?userIds=1,2,3
+const users = await fetchApi(getUsersEndpoint, {
+  userIds: [1, 2, 3],
+});
+```
+
+<Tip>
+  Use `serializationMethod` to customize array serialization (see Advanced section).
+</Tip>
+
+## Request body
+
+For POST, PUT, and PATCH requests, define the body schema:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const createUserEndpoint = endpoint({
+  method: 'POST',
+  path: '/v1/users',
+  baseUrl: 'https://api.example.com',
+  body: z.object({
+    name: z.string(),
+    email: z.string().email(),
+    age: z.number().optional(),
+  }),
+  response: z.object({
+    id: z.number(),
+    created: z.boolean(),
+  }),
+});
+
+const result = await fetchApi(createUserEndpoint, {
+  body: {
+    name: 'John Doe',
+    email: 'john@example.com',
+    age: 30,
+  },
+});
+```
+
+<Warning>
+  Bodies are automatically JSON-encoded. For form data, set `requestFormat: 'form-data'`.
+</Warning>
+
+## Response schemas
+
+Define the expected response structure:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const getGameEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/games/:gameId',
+  baseUrl: 'https://games.roblox.com',
+  parameters: {
+    gameId: z.number(),
+  },
+  response: z.object({
+    id: z.number(),
+    name: z.string(),
+    description: z.string(),
+    creator: z.object({
+      id: z.number(),
+      name: z.string(),
+      type: z.enum(['User', 'Group']),
+    }),
+    price: z.number().nullable(),
+    created: z.string(), // ISO date string
+    updated: z.string(),
+  }),
+});
+```
+
+## Complete examples
+
+<Tabs>
+  <Tab title="Roblox custom endpoint">
+    Undocumented Roblox API endpoint:
+    
+    ```typescript
+    import { z } from 'zod';
+    import { endpoint, fetchApi } from 'rozod';
+
+    const getUniverseVotesEndpoint = endpoint({
+      method: 'GET',
+      path: '/v1/games/votes',
+      baseUrl: 'https://games.roblox.com',
+      parameters: {
+        universeIds: z.array(z.number()),
+      },
+      response: z.object({
+        data: z.array(z.object({
+          id: z.number(),
+          upVotes: z.number(),
+          downVotes: z.number(),
+        })),
+      }),
+    });
+
+    const votes = await fetchApi(getUniverseVotesEndpoint, {
+      universeIds: [1534453623],
+    });
+
+    if (!isAnyErrorResponse(votes)) {
+      console.log(`Up votes: ${votes.data[0].upVotes}`);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="External API">
+    Third-party REST API:
+    
+    ```typescript
+    import { z } from 'zod';
+    import { endpoint, fetchApi } from 'rozod';
+
+    const getWeatherEndpoint = endpoint({
+      method: 'GET',
+      path: '/data/2.5/weather',
+      baseUrl: 'https://api.openweathermap.org',
+      parameters: {
+        q: z.string(), // city name
+        appid: z.string(), // API key
+        units: z.enum(['metric', 'imperial']).optional(),
+      },
+      response: z.object({
+        main: z.object({
+          temp: z.number(),
+          humidity: z.number(),
+        }),
+        weather: z.array(z.object({
+          description: z.string(),
+        })),
+      }),
+    });
+
+    const weather = await fetchApi(getWeatherEndpoint, {
+      q: 'London',
+      appid: 'your_api_key',
+      units: 'metric',
+    });
+    ```
+  </Tab>
+  
+  <Tab title="With body">
+    Creating a resource:
+    
+    ```typescript
+    import { z } from 'zod';
+    import { endpoint, fetchApi } from 'rozod';
+
+    const createGamepassEndpoint = endpoint({
+      method: 'POST',
+      path: '/v1/universes/:universeId/gamepasses',
+      baseUrl: 'https://apis.roblox.com',
+      parameters: {
+        universeId: z.number(),
+      },
+      body: z.object({
+        name: z.string(),
+        description: z.string(),
+        price: z.number(),
+        iconImageAssetId: z.number(),
+      }),
+      response: z.object({
+        gamePassId: z.number(),
+        success: z.boolean(),
+      }),
+    });
+
+    const result = await fetchApi(createGamepassEndpoint, {
+      universeId: 1534453623,
+      body: {
+        name: 'VIP Pass',
+        description: 'Get VIP benefits',
+        price: 100,
+        iconImageAssetId: 123456,
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Advanced options
+
+### Array serialization
+
+Customize how arrays are serialized in query parameters:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const endpoint = endpoint({
+  method: 'GET',
+  path: '/v1/data',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    ids: z.array(z.number()),
+  },
+  serializationMethod: {
+    ids: { 
+      style: 'form',      // 'form' | 'spaceDelimited' | 'pipeDelimited'
+      explode: true,      // true for &ids=1&ids=2, false for ids=1,2
+    },
+  },
+  response: z.object({ data: z.array(z.string()) }),
+});
+```
+
+### Request format
+
+Change the request body format:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const formEndpoint = endpoint({
+  method: 'POST',
+  path: '/v1/upload',
+  baseUrl: 'https://api.example.com',
+  requestFormat: 'form-data', // 'json' | 'text' | 'form-data'
+  body: z.object({
+    file: z.string(),
+  }),
+  response: z.object({ success: z.boolean() }),
+});
+```
+
+### Error definitions
+
+Document expected errors:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const endpoint = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://api.example.com',
+  parameters: { userId: z.number() },
+  response: z.object({ name: z.string() }),
+  errors: [
+    { status: 404, description: 'User not found' },
+    { status: 403, description: 'Access denied' },
+  ],
+});
+```
+
+<Note>
+  Error definitions are for documentation only. RoZod will still return `AnyError` for all non-OK responses.
+</Note>
+
+## Using custom endpoints
+
+Custom endpoints work with all RoZod features:
+
+```typescript
+import { 
+  fetchApi, 
+  fetchApiSplit, 
+  fetchApiPages,
+  isAnyErrorResponse 
+} from 'rozod';
+
+// Basic fetch
+const data = await fetchApi(myEndpoint, { id: '123' });
+
+// Batch processing
+const batched = await fetchApiSplit(
+  myEndpoint,
+  { ids: [1, 2, 3, /* ...many more */] },
+  { ids: 100 }
+);
+
+// Pagination (if endpoint returns nextPageCursor)
+const pages = await fetchApiPages(myEndpoint, { category: 'games' });
+
+// Error handling
+if (isAnyErrorResponse(data)) {
+  console.error(data.message);
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="OpenCloud" icon="cloud" href="/guides/opencloud">
+    Learn about Roblox OpenCloud endpoints
+  </Card>
+  
+  <Card title="Server configuration" icon="server" href="/guides/server-configuration">
+    Configure authentication for your endpoints
+  </Card>
+</CardGroup>

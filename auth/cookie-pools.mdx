@@ -1,0 +1,344 @@
+---
+title: Cookie pooling and rotation
+description: Use multiple Roblox accounts for load distribution and failover
+---
+
+RoZod supports cookie pooling, allowing you to use multiple Roblox accounts to distribute load, avoid rate limits, and provide failover capabilities.
+
+## Basic cookie pool
+
+Configure multiple cookies by passing an array:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: [
+    process.env.ROBLOX_COOKIE_1,
+    process.env.ROBLOX_COOKIE_2,
+    process.env.ROBLOX_COOKIE_3,
+  ],
+});
+```
+
+RoZod will automatically rotate through accounts using round-robin by default.
+
+<Info>
+With round-robin rotation, requests cycle through accounts: 1 → 2 → 3 → 1 → 2 → ...
+</Info>
+
+## Rotation modes
+
+Control how cookies are selected from the pool:
+
+### Round-robin (default)
+
+Cycles through cookies sequentially:
+
+```typescript
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'round-robin', // Default for multiple cookies
+});
+
+// Request 1 uses cookie1
+// Request 2 uses cookie2
+// Request 3 uses cookie3
+// Request 4 uses cookie1 (cycles back)
+```
+
+<Note>
+Round-robin is the default when multiple cookies are provided. You don't need to specify it explicitly.
+</Note>
+
+### Random selection
+
+Randomly picks a cookie for each request:
+
+```typescript
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'random',
+});
+
+// Each request randomly selects from the pool
+```
+
+<Info>
+Random selection provides better load distribution when making many parallel requests.
+</Info>
+
+### No rotation
+
+Always uses the first cookie:
+
+```typescript
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'none',
+});
+
+// All requests use cookie1
+// Other cookies available as manual fallback
+```
+
+<Warning>
+With `cookieRotation: 'none'`, only the first cookie is used. Other cookies in the pool are ignored unless manually specified.
+</Warning>
+
+## Use cases
+
+### Load distribution
+
+Spread API calls across multiple accounts to avoid rate limits:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+configureServer({
+  cookies: [
+    process.env.ACCOUNT_1,
+    process.env.ACCOUNT_2,
+    process.env.ACCOUNT_3,
+  ],
+  cookieRotation: 'round-robin',
+});
+
+// Make many requests - automatically distributed across accounts
+const icons = await Promise.all([
+  fetchApi(getGamesIcons, { universeIds: [1] }),     // Uses account 1
+  fetchApi(getGamesIcons, { universeIds: [2] }),     // Uses account 2
+  fetchApi(getGamesIcons, { universeIds: [3] }),     // Uses account 3
+  fetchApi(getGamesIcons, { universeIds: [4] }),     // Uses account 1
+]);
+```
+
+### High-volume applications
+
+For applications handling millions of requests:
+
+```typescript
+configureServer({
+  cookies: Array.from({ length: 10 }, (_, i) => 
+    process.env[`ROBLOX_COOKIE_${i + 1}`]
+  ),
+  cookieRotation: 'random', // Better for parallel requests
+});
+```
+
+<Check>
+RoZod powers [RoGold](https://rogold.live), which handles millions of API requests daily using cookie pooling.
+</Check>
+
+### Failover and redundancy
+
+Provide backup accounts in case one fails:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: [
+    process.env.PRIMARY_COOKIE,
+    process.env.BACKUP_COOKIE_1,
+    process.env.BACKUP_COOKIE_2,
+  ],
+});
+
+// If primary account hits rate limit, subsequent requests use backups
+```
+
+## User agent rotation
+
+Combine cookie rotation with user agent rotation for maximum effectiveness:
+
+```typescript
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'round-robin',
+  
+  userAgents: ['CustomBot/1.0', 'CustomBot/2.0'],
+  userAgentRotation: 'random',
+});
+```
+
+### User agent rotation modes
+
+<Tabs>
+  <Tab title="None (default)">
+    Use the same user agent for all requests in a session:
+    
+    ```typescript
+    configureServer({
+      userAgents: ['UA1', 'UA2'],
+      userAgentRotation: 'none', // Default
+    });
+    ```
+  </Tab>
+  <Tab title="Round-robin">
+    Cycle through user agents sequentially:
+    
+    ```typescript
+    configureServer({
+      userAgents: ['UA1', 'UA2', 'UA3'],
+      userAgentRotation: 'round-robin',
+    });
+    ```
+  </Tab>
+  <Tab title="Random">
+    Randomly select a user agent per request:
+    
+    ```typescript
+    configureServer({
+      userAgents: ['UA1', 'UA2', 'UA3'],
+      userAgentRotation: 'random',
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Cookie management utilities
+
+### Get current cookies
+
+Retrieve all cookies from the pool:
+
+```typescript
+import { getCookies } from 'rozod';
+
+const cookies = getCookies();
+console.log(`Pool has ${cookies.length} cookies`);
+```
+
+### Update specific cookie
+
+Manually update a cookie in the pool:
+
+```typescript
+import { updateCookie } from 'rozod';
+
+// Update the first cookie (index 0)
+const success = updateCookie(0, newCookieValue);
+
+if (success) {
+  console.log('Cookie updated successfully');
+}
+```
+
+### Refresh cookies
+
+Proactively refresh cookies before they expire:
+
+```typescript
+import { refreshCookie, getCookies } from 'rozod';
+
+// Refresh all cookies in the pool
+const cookies = getCookies();
+for (let i = 0; i < cookies.length; i++) {
+  const result = await refreshCookie(i);
+  if (result.success) {
+    console.log(`Cookie ${i} refreshed:`, result.newCookie);
+  } else {
+    console.error(`Cookie ${i} refresh failed:`, result.error);
+  }
+}
+```
+
+<Info>
+See [Cookie rotation](/auth/cookie-rotation) for more details on automatic and manual cookie refresh.
+</Info>
+
+## Monitoring and debugging
+
+### Track cookie usage
+
+Log which cookie is being used for each request:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'round-robin',
+});
+
+// The cookie rotation happens automatically inside fetchApi
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+### Handle cookie rotation events
+
+Get notified when Roblox rotates a cookie:
+
+```typescript
+configureServer({
+  cookies: [cookie1, cookie2, cookie3],
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    console.log(`Cookie at index ${poolIndex} was rotated`);
+    await db.updateCookie(poolIndex, newCookie);
+  }
+});
+```
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Use separate accounts for different purposes">
+    Create dedicated Roblox accounts for your bot/service instead of using personal accounts. This provides better isolation and security.
+  </Accordion>
+  
+  <Accordion title="Start with round-robin rotation">
+    Round-robin provides predictable, even distribution. Use random rotation only if you need better load balancing for highly parallel workloads.
+  </Accordion>
+  
+  <Accordion title="Monitor cookie health">
+    Periodically check that all cookies in your pool are valid and not expired or banned. Remove invalid cookies to avoid errors.
+  </Accordion>
+  
+  <Accordion title="Implement cookie rotation handlers">
+    Always configure `onCookieRefresh` to persist new cookie values when Roblox rotates them.
+  </Accordion>
+  
+  <Accordion title="Don't share cookies across services">
+    Each service should have its own cookie pool. Sharing cookies can lead to rate limiting and authentication conflicts.
+  </Accordion>
+</AccordionGroup>
+
+## Error handling
+
+Handle errors that may occur with cookie pools:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const result = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+
+if (isAnyErrorResponse(result)) {
+  if (result.message.includes('Token Validation Failed')) {
+    console.error('Authentication failed - cookie may be invalid');
+    // Implement cookie refresh or removal logic
+  } else if (result.message.includes('TooManyRequests')) {
+    console.error('Rate limited - consider adding more cookies to pool');
+  }
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cookie rotation" icon="arrows-rotate" href="/auth/cookie-rotation">
+    Handle automatic cookie rotation from Roblox
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand built-in security mechanisms
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle authentication and rate limit errors
+  </Card>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Learn more about server configuration
+  </Card>
+</CardGroup>

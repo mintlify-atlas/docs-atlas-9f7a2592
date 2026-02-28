@@ -1,0 +1,208 @@
+---
+title: OpenCloud overview
+description: Introduction to RoZod's OpenCloud API wrapper and authentication setup
+---
+
+RoZod provides comprehensive TypeScript wrappers for Roblox's OpenCloud APIs, offering type-safe access to data stores, messaging, universe management, and asset operations.
+
+## What is OpenCloud?
+
+OpenCloud is Roblox's modern REST API infrastructure that provides secure, authenticated access to your experiences and resources. Unlike legacy web APIs, OpenCloud uses API keys for authentication and follows industry-standard REST conventions.
+
+RoZod includes **95+ OpenCloud endpoints** across both v1 and v2 API versions, all code-generated from official Roblox documentation with full TypeScript type safety.
+
+## Import structure
+
+OpenCloud APIs are organized into v1 and v2 namespaces:
+
+```typescript
+import { v1, v2 } from 'rozod/lib/opencloud';
+
+// Access v1 APIs
+const datastores = v1.datastores;
+const messaging = v1.messaging;
+const universes = v1.universes;
+const assets = v1.assets;
+
+// Access v2 APIs (newer, recommended when available)
+const cloud = v2;
+```
+
+### Direct imports
+
+You can also import specific endpoint modules directly:
+
+```typescript
+import { DatastoresV1, MessagingV1 } from 'rozod/lib/opencloud';
+import { getCloudV2UniversesUniverseId } from 'rozod/lib/opencloud/v2/cloud';
+```
+
+## Authentication
+
+OpenCloud APIs require API keys for authentication. You can configure authentication once at startup using `configureServer()`:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Configure your OpenCloud API key
+configureServer({ 
+  cloudKey: 'your_opencloud_api_key_here' 
+});
+
+// All OpenCloud requests automatically include the x-api-key header
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+```
+
+### Creating API keys
+
+To create an OpenCloud API key:
+
+1. Go to the [Creator Dashboard](https://create.roblox.com/dashboard/credentials)
+2. Navigate to **Credentials** under your experience
+3. Click **Create API Key**
+4. Select the required scopes for your use case
+5. Copy and securely store your API key
+
+<Warning>
+API keys cannot be retrieved after creation. Store them securely and never commit them to version control.
+</Warning>
+
+### Scopes and permissions
+
+Each OpenCloud endpoint requires specific scopes. For example:
+
+- **DataStores**: `universe-datastores.objects:read`, `universe-datastores.objects:write`
+- **Messaging**: `universe-messaging-service:publish`
+- **Universe Management**: `universe:write`
+- **Assets**: `asset:read`, `asset:write`
+
+Check each endpoint's documentation for its required scopes.
+
+## Mixed authentication
+
+You can use both classic API cookies and OpenCloud keys together:
+
+```typescript
+configureServer({
+  cookies: 'your_roblosecurity_cookie',  // For classic *.roblox.com APIs
+  cloudKey: 'your_opencloud_key',        // For apis.roblox.com OpenCloud
+});
+```
+
+<Info>
+The API key is only applied to OpenCloud endpoints (URLs containing `/cloud/`). Cookies are used for all other Roblox APIs.
+</Info>
+
+## Manual authentication
+
+You can also pass headers manually per-request:
+
+```typescript
+const universeInfo = await fetchApi(
+  v2.getCloudV2UniversesUniverseId,
+  { universe_id: '123456789' },
+  {
+    headers: {
+      'x-api-key': 'your_opencloud_api_key_here'
+    }
+  }
+);
+```
+
+## Basic usage example
+
+```typescript
+import { fetchApi, configureServer } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Setup authentication
+configureServer({ cloudKey: process.env.ROBLOX_CLOUD_KEY });
+
+// Get universe details
+const universe = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+console.log(universe.displayName);
+console.log(universe.description);
+
+// Publish a message to live servers
+await fetchApi(v2.postCloudV2UniversesUniverseIdPublishMessage, {
+  universe_id: '123456789',
+}, {
+  topic: 'announcements',
+  message: 'Server maintenance in 5 minutes',
+});
+```
+
+## API versions
+
+### v1 APIs (Legacy)
+
+The v1 namespace contains older OpenCloud endpoints. While still supported, many have v2 alternatives:
+
+- **DataStores**: Basic CRUD operations
+- **Messaging**: Cross-server messaging
+- **Universes**: Place publishing
+- **Assets**: Asset management
+
+### v2 APIs (Recommended)
+
+The v2 namespace contains newer, improved endpoints with:
+
+- Better error handling
+- More consistent response formats
+- Additional features (scopes, revisions, filters)
+- Improved performance
+
+<Note>
+When both v1 and v2 versions are available, prefer v2 for new projects.
+</Note>
+
+## Error handling
+
+OpenCloud APIs return standard error responses:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const result = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+if (isAnyErrorResponse(result)) {
+  console.error('Error:', result.message);
+  return;
+}
+
+console.log('Success:', result.displayName);
+```
+
+## Rate limits
+
+OpenCloud APIs have rate limits that vary by endpoint. When you exceed limits, you'll receive a `429 Too Many Requests` response.
+
+<Warning>
+Implement exponential backoff and respect rate limits to avoid being temporarily blocked.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="DataStores" icon="database" href="/api/opencloud/datastores">
+    Manage persistent data storage
+  </Card>
+  <Card title="Messaging" icon="message" href="/api/opencloud/messaging">
+    Cross-server communication
+  </Card>
+  <Card title="Universes" icon="globe" href="/api/opencloud/universes">
+    Manage experiences and places
+  </Card>
+  <Card title="Assets" icon="image" href="/api/opencloud/assets">
+    Upload and manage assets
+  </Card>
+</CardGroup>

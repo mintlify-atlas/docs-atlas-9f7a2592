@@ -1,0 +1,227 @@
+---
+title: fetchApi
+description: Core function for making type-safe requests to Roblox API endpoints
+---
+
+## Overview
+
+The `fetchApi` function is the primary method for making type-safe requests to Roblox API endpoints. It handles authentication, CSRF tokens, error parsing, caching, and retries automatically.
+
+## Signature
+
+```typescript
+async function fetchApi<S extends EndpointSchema>(
+  endpoint: S,
+  params?: ExtractParams<S>,
+  requestOptions?: RequestOptions
+): Promise<ExtractResponse<S> | AnyError>
+```
+
+## Parameters
+
+<ParamField path="endpoint" type="EndpointSchema" required>
+  The endpoint definition object containing method, path, baseUrl, and schema information. Use pre-defined endpoints from `rozod/lib/endpoints/*` or create custom ones with the `endpoint` function.
+</ParamField>
+
+<ParamField path="params" type="ExtractParams<S>">
+  Parameters to pass to the endpoint. The type is automatically inferred from the endpoint definition. Can be undefined if the endpoint requires no parameters.
+</ParamField>
+
+<ParamField path="requestOptions" type="RequestOptions">
+  Additional options for the request.
+  
+  <ParamField path="returnRaw" type="boolean" default={false}>
+    When `true`, returns the raw `Response` object instead of parsed data.
+  </ParamField>
+  
+  <ParamField path="throwOnError" type="boolean" default={false}>
+    When `true`, throws an error instead of returning an `AnyError` object on failure.
+  </ParamField>
+  
+  <ParamField path="retries" type="number" default={0}>
+    Number of times to retry the request on network failure.
+  </ParamField>
+  
+  <ParamField path="retryDelay" type="number" default={0}>
+    Delay in milliseconds between retry attempts.
+  </ParamField>
+  
+  <ParamField path="cacheTime" type="number">
+    Time in milliseconds to cache the response. Requires `cacheKey` to be set.
+  </ParamField>
+  
+  <ParamField path="cacheKey" type="string">
+    Unique key for caching this request. Required when using `cacheTime`.
+  </ParamField>
+  
+  <ParamField path="cacheType" type="'memory' | 'local' | 'chrome'" default="memory">
+    Storage type for caching: in-memory, localStorage, or Chrome storage.
+  </ParamField>
+  
+  <ParamField path="headers" type="HeadersInit">
+    Additional headers to include in the request.
+  </ParamField>
+  
+  <ParamField path="mode" type="RequestMode" default="cors">
+    Request mode (cors, no-cors, same-origin).
+  </ParamField>
+  
+  <ParamField path="credentials" type="RequestCredentials" default="include">
+    Credentials mode (include, same-origin, omit).
+  </ParamField>
+</ParamField>
+
+## Return value
+
+Returns a `Promise` that resolves to either:
+
+- **Success response**: The typed response data matching the endpoint's response schema
+- **Error response**: An `AnyError` object with a `message` field (when `throwOnError` is `false`)
+- **Raw Response**: The raw `Response` object (when `returnRaw` is `true`)
+- **Throws**: An error (when `throwOnError` is `true` and request fails)
+
+## Examples
+
+### Basic request
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(getGamesIcons, {
+  universeIds: [1534453623, 65241]
+});
+
+// Check for errors using type guard
+if (isAnyErrorResponse(response)) {
+  console.error(response.message);
+} else {
+  console.log(response.data);
+}
+```
+
+### With error throwing
+
+```typescript
+try {
+  const response = await fetchApi(
+    getGamesIcons,
+    { universeIds: [1534453623] },
+    { throwOnError: true }
+  );
+  
+  // Response is guaranteed to be successful here
+  console.log(response.data);
+} catch (error) {
+  console.error((error as Error).message);
+}
+```
+
+### With retries
+
+```typescript
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    retries: 3,
+    retryDelay: 1000 // Wait 1 second between retries
+  }
+);
+```
+
+### With caching
+
+```typescript
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    cacheTime: 60000, // Cache for 60 seconds
+    cacheKey: 'game-icons-1534453623',
+    cacheType: 'memory'
+  }
+);
+```
+
+### Getting raw response
+
+```typescript
+const rawResponse = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  { returnRaw: true }
+);
+
+const json = await rawResponse.json();
+const headers = rawResponse.headers;
+```
+
+### With custom headers
+
+```typescript
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    headers: {
+      'X-Custom-Header': 'value'
+    }
+  }
+);
+```
+
+## Type safety
+
+The function provides full type safety:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const userInfo = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [1, 123456] }
+);
+
+// TypeScript knows the response type
+if (!isAnyErrorResponse(userInfo)) {
+  // userInfo.data is typed as an array of user details
+  const displayName = userInfo.data[0].displayName; // ✓ Type-safe
+}
+```
+
+## Error handling
+
+By default, `fetchApi` returns either the success response or an `AnyError` object. Use the `isAnyErrorResponse` type guard to check:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+
+const response = await fetchApi(endpoint, params);
+
+if (isAnyErrorResponse(response)) {
+  // Handle error
+  console.error(response.message);
+  console.error(response.userFacingMessage); // May be undefined
+  console.error(response.code); // May be undefined
+} else {
+  // Handle success
+  console.log(response);
+}
+```
+
+<Note>
+  The function automatically handles CSRF tokens, hardware-backed authentication (HBA), and generic challenges when configured.
+</Note>
+
+<Warning>
+  For server environments, make sure to configure authentication using `configureServer()` before making requests to authenticated endpoints.
+</Warning>
+
+## Related functions
+
+- [fetchApiPages](/api/fetch-api-pages) - Fetch all pages of paginated results
+- [fetchApiPagesGenerator](/api/fetch-api-pages) - Generator for processing pages one at a time
+- [fetchApiSplit](/api/fetch-api-split) - Split large requests into smaller batches
+- [endpoint](/api/endpoint-definition) - Define custom endpoints

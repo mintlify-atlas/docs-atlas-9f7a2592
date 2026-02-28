@@ -1,0 +1,206 @@
+---
+title: "Users API"
+description: "Access user profiles, authentication, and account information"
+---
+
+The Users API provides endpoints for accessing user profiles, managing account information, and handling authentication-related operations.
+
+## Importing endpoints
+
+Import the endpoints you need from the users module:
+
+```typescript
+import { getUsersUserid, getUsersAuthenticated, postUsers } from 'rozod/endpoints/usersv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get user by ID
+
+Retrieve detailed information about a user by their user ID.
+
+```typescript
+const user = await fetchApi(getUsersUserid, {
+  userId: 1234567890,
+});
+
+if (!isAnyErrorResponse(user)) {
+  console.log(user.name); // Username
+  console.log(user.displayName); // Display name
+  console.log(user.hasVerifiedBadge); // Verification status
+}
+```
+
+## Get authenticated user
+
+Get information about the currently authenticated user.
+
+```typescript
+const currentUser = await fetchApi(getUsersAuthenticated, undefined);
+
+if (!isAnyErrorResponse(currentUser)) {
+  console.log(`Logged in as: ${currentUser.displayName}`);
+}
+```
+
+<Note>
+This endpoint requires authentication. Make sure to configure your cookies using `configureServer()` for server-side usage.
+</Note>
+
+## Get multiple users by ID
+
+Fetch information for multiple users at once.
+
+```typescript
+const users = await fetchApi(postUsers, {
+  body: {
+    userIds: [1234567890, 9876543210],
+    excludeBannedUsers: true,
+  },
+});
+
+if (!isAnyErrorResponse(users)) {
+  users.data.forEach((user) => {
+    console.log(`${user.displayName} (@${user.name})`);
+  });
+}
+```
+
+## Get multiple users by username
+
+Lookup users by their username (also checks previous usernames).
+
+```typescript
+import { postUsernamesUsers } from 'rozod/endpoints/usersv1';
+
+const users = await fetchApi(postUsernamesUsers, {
+  body: {
+    usernames: ['Builderman', 'Roblox'],
+    excludeBannedUsers: false,
+  },
+});
+
+if (!isAnyErrorResponse(users)) {
+  users.data.forEach((user) => {
+    console.log(`Found: ${user.displayName} (ID: ${user.id})`);
+  });
+}
+```
+
+## Search users
+
+Search for users by keyword with pagination support.
+
+```typescript
+import { getUsersSearch } from 'rozod/endpoints/usersv1';
+
+const searchResults = await fetchApi(getUsersSearch, {
+  keyword: 'builder',
+  limit: 25,
+});
+
+if (!isAnyErrorResponse(searchResults)) {
+  searchResults.data.forEach((user) => {
+    console.log(`${user.displayName} - ${user.hasVerifiedBadge ? '✓' : ''}`);
+  });
+}
+```
+
+## Get username history
+
+Retrieve a user's previous usernames.
+
+```typescript
+import { getUsersUseridUsernameHistory } from 'rozod/endpoints/usersv1';
+
+const history = await fetchApi(getUsersUseridUsernameHistory, {
+  userId: 1234567890,
+  limit: 10,
+  sortOrder: 'Desc',
+});
+
+if (!isAnyErrorResponse(history)) {
+  console.log('Previous usernames:');
+  history.data.forEach((entry) => {
+    console.log(`- ${entry.name}`);
+  });
+}
+```
+
+<Tip>
+Use pagination parameters (`cursor`, `limit`) to efficiently fetch large datasets. The Users API supports limits of 10, 25, 50, or 100 items per request.
+</Tip>
+
+## Update user profile
+
+The Users API also provides endpoints for updating user information (requires authentication):
+
+- **Update description**: `postDescription`
+- **Update gender**: `postGender`
+- **Update display name**: `patchUsersUseridDisplayNames`
+- **Update birthdate**: `postBirthdate`
+
+```typescript
+import { postDescription } from 'rozod/endpoints/usersv1';
+
+const result = await fetchApi(postDescription, {
+  body: {
+    description: 'New profile description',
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Description updated:', result.description);
+}
+```
+
+## Common patterns
+
+### Batch user lookups
+
+For efficient bulk user lookups, use `postUsers` with up to 100 user IDs:
+
+```typescript
+const userIds = [1, 2, 3, 4, 5]; // Up to 100 IDs
+const users = await fetchApi(postUsers, {
+  body: { userIds, excludeBannedUsers: true },
+});
+```
+
+### Validate display names
+
+Check if a display name is valid before updating:
+
+```typescript
+import { getUsersUseridDisplayNamesValidate } from 'rozod/endpoints/usersv1';
+
+const validation = await fetchApi(getUsersUseridDisplayNamesValidate, {
+  userId: 1234567890,
+  displayName: 'NewDisplayName',
+});
+
+// Empty object means valid, error response means invalid
+if (!isAnyErrorResponse(validation)) {
+  console.log('Display name is valid');
+}
+```
+
+## Available endpoints
+
+All endpoints are exported from `rozod/endpoints/usersv1`:
+
+- `getBirthdate` - Get user's birthdate
+- `postBirthdate` - Update user's birthdate
+- `getDescription` - Get user's description
+- `postDescription` - Update user's description
+- `getGender` - Get user's gender
+- `postGender` - Update user's gender
+- `getUsersUserid` - Get user by ID
+- `postUsers` - Get multiple users by ID
+- `postUsernamesUsers` - Get users by usernames
+- `getUsersAuthenticated` - Get authenticated user
+- `getUsersSearch` - Search users by keyword
+- `getUsersUseridUsernameHistory` - Get username history
+- `patchUsersUseridDisplayNames` - Update display name
+- And more...
+
+For the complete list of endpoints and their parameters, refer to the TypeScript types in your IDE.

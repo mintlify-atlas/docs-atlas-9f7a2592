@@ -1,0 +1,282 @@
+---
+title: Server authentication
+description: Configure authentication for Node.js, Bun, and Deno environments
+---
+
+For server-side applications, RoZod requires explicit configuration to authenticate with Roblox APIs. Use `configureServer()` to set up authentication once at application startup.
+
+## Basic configuration
+
+Configure authentication with a single Roblox account:
+
+```typescript
+import { configureServer } from 'rozod';
+
+// Configure once at startup
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE
+});
+```
+
+<Warning>
+Never hardcode cookies in your source code. Always use environment variables or secure secret management systems.
+</Warning>
+
+## Getting your cookie
+
+To obtain your `.ROBLOSECURITY` cookie:
+
+1. Log into Roblox in your browser
+2. Open browser DevTools (F12)
+3. Go to Application → Cookies → https://www.roblox.com
+4. Copy the value of the `.ROBLOSECURITY` cookie
+
+<Note>
+The cookie value typically starts with `_|WARNING:-DO-NOT-SHARE-THIS...`. Include the full value including the warning prefix.
+</Note>
+
+## User agent configuration
+
+RoZod automatically includes realistic browser user agents in server requests to avoid rate limiting. You can customize this behavior:
+
+### Default user agents
+
+RoZod includes a pool of common browser user agents that are automatically rotated:
+
+```typescript
+// Default user agents (built-in)
+const DEFAULT_USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  // ... more user agents
+];
+```
+
+### Custom user agents
+
+Provide your own user agents:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE,
+  userAgents: ['MyBot/1.0', 'MyService/2.0'],
+  userAgentRotation: 'round-robin',
+});
+```
+
+### Disable user agents
+
+Set an empty array to disable user agent injection:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE,
+  userAgents: [], // No user agent header
+});
+```
+
+## OpenCloud API keys
+
+For OpenCloud endpoints, configure your API key:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY
+});
+```
+
+Combine cookie and OpenCloud authentication:
+
+```typescript
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE,  // For classic APIs
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY, // For OpenCloud
+});
+```
+
+<Info>
+The API key is automatically applied only to OpenCloud endpoints (URLs containing `/cloud/`). Cookies are used for all other Roblox APIs.
+</Info>
+
+## Configuration management
+
+### View current configuration
+
+Get a read-only copy of the current configuration:
+
+```typescript
+import { getServerConfig } from 'rozod';
+
+const config = getServerConfig();
+console.log('Cookies configured:', !!config.cookies);
+console.log('OpenCloud key configured:', !!config.cloudKey);
+```
+
+### Clear configuration
+
+Reset all server configuration:
+
+```typescript
+import { clearServerConfig } from 'rozod';
+
+clearServerConfig();
+```
+
+<Warning>
+Clearing configuration will cause subsequent authenticated requests to fail. Only use this when reconfiguring or shutting down.
+</Warning>
+
+## Manual headers (legacy)
+
+You can still pass headers manually per-request if needed:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const userInfo = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [123456] },
+  {
+    headers: {
+      'Cookie': `.ROBLOSECURITY=${process.env.ROBLOSECURITY_COOKIE}`
+    }
+  }
+);
+```
+
+<Note>
+Manual headers take precedence over `configureServer()` defaults. This can be useful for per-request customization or testing.
+</Note>
+
+## Runtime support
+
+RoZod's server authentication works across all JavaScript runtimes:
+
+<Tabs>
+  <Tab title="Node.js">
+    ```typescript
+    import { configureServer } from 'rozod';
+    
+    configureServer({
+      cookies: process.env.ROBLOSECURITY_COOKIE
+    });
+    ```
+  </Tab>
+  <Tab title="Bun">
+    ```typescript
+    import { configureServer } from 'rozod';
+    
+    configureServer({
+      cookies: Bun.env.ROBLOSECURITY_COOKIE
+    });
+    ```
+  </Tab>
+  <Tab title="Deno">
+    ```typescript
+    import { configureServer } from 'rozod';
+    
+    configureServer({
+      cookies: Deno.env.get('ROBLOSECURITY_COOKIE')
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Security best practices
+
+### Environment variables
+
+Store cookies in environment variables:
+
+```bash
+# .env file (never commit this!)
+ROBLOSECURITY_COOKIE=_|WARNING:-DO-NOT-SHARE-THIS...
+ROBLOX_OPENCLOUD_KEY=your_opencloud_key_here
+```
+
+```typescript
+import 'dotenv/config';
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE,
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY,
+});
+```
+
+### Secret management
+
+For production applications, use proper secret management:
+
+```typescript
+import { configureServer } from 'rozod';
+import { getSecret } from './secrets'; // Your secret management
+
+const cookie = await getSecret('ROBLOSECURITY_COOKIE');
+configureServer({ cookies: cookie });
+```
+
+### Cookie rotation handling
+
+Roblox may rotate cookies for security. Configure a callback to persist new values:
+
+```typescript
+configureServer({
+  cookies: await db.getCookie(),
+  onCookieRefresh: async ({ newCookie, poolIndex }) => {
+    await db.updateCookie(poolIndex, newCookie);
+    console.log('Cookie rotated and saved!');
+  }
+});
+```
+
+<Info>
+See [Cookie rotation](/auth/cookie-rotation) for detailed information on handling cookie rotation.
+</Info>
+
+## Troubleshooting
+
+### Authentication failures
+
+If requests fail with authentication errors:
+
+1. **Verify cookie format**: Ensure you copied the complete cookie value
+2. **Check expiration**: Roblox cookies can expire - get a fresh one
+3. **Test manually**: Use the cookie in a REST client like Postman
+4. **Check account status**: Ensure the Roblox account isn't locked or banned
+
+### Rate limiting
+
+If you're hitting rate limits:
+
+1. **Use cookie pools**: Distribute load across multiple accounts
+2. **Add delays**: Implement backoff between requests
+3. **Use user agents**: Ensure realistic user agents are configured
+
+```typescript
+configureServer({
+  cookies: [cookie1, cookie2, cookie3],
+  cookieRotation: 'round-robin',
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cookie pools" icon="layer-group" href="/auth/cookie-pools">
+    Use multiple accounts for load distribution
+  </Card>
+  <Card title="Cookie rotation" icon="arrows-rotate" href="/auth/cookie-rotation">
+    Handle automatic cookie rotation
+  </Card>
+  <Card title="OpenCloud keys" icon="key" href="/auth/opencloud-keys">
+    Configure OpenCloud API authentication
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand automatic security mechanisms
+  </Card>
+</CardGroup>

@@ -1,0 +1,507 @@
+---
+title: "Type safety"
+description: "TypeScript type safety features in RoZod"
+---
+
+## Overview
+
+RoZod provides comprehensive type safety through [Zod](https://zod.dev) schema validation and TypeScript type inference. All endpoints, parameters, and responses are fully typed at compile time and validated at runtime.
+
+## Endpoint type inference
+
+RoZod automatically infers TypeScript types from Zod schemas:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const response = await fetchApi(getUsersUserdetails, {
+  userIds: [1, 123456]
+});
+
+if (!isAnyErrorResponse(response)) {
+  // TypeScript knows exact response structure
+  response.data[0].id;          // number
+  response.data[0].name;        // string
+  response.data[0].displayName; // string
+  response.data[0].hasVerifiedBadge; // boolean
+}
+```
+
+No manual type annotations needed. Types are inferred from the endpoint definition.
+
+## Parameter validation
+
+Parameters are validated against Zod schemas:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+// TypeScript error: universeIds must be number[]
+const response = await fetchApi(getGamesIcons, {
+  universeIds: ['123', '456'] // ❌ Error: Type 'string' is not assignable to type 'number'
+});
+
+// Correct
+const response = await fetchApi(getGamesIcons, {
+  universeIds: [123, 456] // ✅ Valid
+});
+```
+
+### Required vs optional parameters
+
+TypeScript enforces required parameters:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const myEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/items',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number().int(),        // Required
+    limit: z.number().default(10),   // Optional (has default)
+    filter: z.string().optional(),   // Optional
+  },
+  response: z.object({ data: z.array(z.any()) }),
+});
+
+// TypeScript error: userId is required
+await fetchApi(myEndpoint, {}); // ❌
+
+// Valid: userId provided, optional params omitted
+await fetchApi(myEndpoint, { userId: 123 }); // ✅
+
+// Valid: all parameters provided
+await fetchApi(myEndpoint, { // ✅
+  userId: 123,
+  limit: 25,
+  filter: 'active'
+});
+```
+
+### Default values
+
+Parameters with defaults are optional but have guaranteed values:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const getItems = endpoint({
+  method: 'GET',
+  path: '/v1/items',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    sortOrder: z.enum(['Asc', 'Desc']).default('Desc'),
+    limit: z.number().default(25),
+  },
+  response: z.object({ data: z.array(z.any()) }),
+});
+
+// Uses defaults: sortOrder='Desc', limit=25
+await fetchApi(getItems, {});
+
+// Override defaults
+await fetchApi(getItems, { sortOrder: 'Asc', limit: 50 });
+```
+
+## Response type inference
+
+Response types are inferred from endpoint schemas:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(getGamesIcons, {
+  universeIds: [1534453623]
+});
+
+if (!isAnyErrorResponse(response)) {
+  // Inferred type:
+  // {
+  //   data: Array<{
+  //     targetId: number;
+  //     state: string;
+  //     imageUrl: string;
+  //   }>;
+  // }
+  
+  response.data.forEach(icon => {
+    console.log(icon.targetId);  // number
+    console.log(icon.imageUrl);  // string
+  });
+}
+```
+
+### Union types (default error handling)
+
+By default, responses are typed as `SuccessType | AnyError`:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Type: UserDetailsResponse | AnyError
+const response = await fetchApi(getUsersUserdetails, {
+  userIds: [123456]
+});
+
+// Type guard narrows to UserDetailsResponse
+if (isAnyErrorResponse(response)) {
+  // TypeScript knows: response is AnyError
+  console.error(response.message);
+  return;
+}
+
+// TypeScript knows: response is UserDetailsResponse
+console.log(response.data[0].name);
+```
+
+### Throw-on-error types
+
+With `throwOnError: true`, responses are typed as only the success type:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+try {
+  // Type: UserDetailsResponse (no AnyError union)
+  const response = await fetchApi(
+    getUsersUserdetails,
+    { userIds: [123456] },
+    { throwOnError: true }
+  );
+  
+  // No error checking needed - type is always success
+  console.log(response.data[0].name);
+} catch (error) {
+  console.error((error as Error).message);
+}
+```
+
+### Raw response types
+
+With `returnRaw: true`, get a typed Response object:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Type: Response with typed json() method
+const response = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [123456] },
+  { returnRaw: true }
+);
+
+// json() returns the properly typed response
+const data = await response.json();
+// Type: { data: Array<{ id: number; name: string; ... }> }
+```
+
+## Runtime validation
+
+Zod validates all data at runtime, catching API changes early:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const myEndpoint = endpoint({
+  method: 'GET',
+  path: '/v1/user/:userId',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    userId: z.number().int().positive(),
+  },
+  response: z.object({
+    id: z.number(),
+    email: z.string().email(),
+    age: z.number().min(0).max(120),
+  }),
+});
+
+// Runtime validation catches invalid data
+const response = await fetchApi(myEndpoint, {
+  userId: 123
+});
+
+// If API returns invalid data, Zod will throw
+// Example: email field is not a valid email
+// Example: age is negative or > 120
+```
+
+<Warning>
+If the API response doesn't match the Zod schema, Zod will throw a validation error. This protects against unexpected API changes.
+</Warning>
+
+## Custom endpoint types
+
+Define custom endpoints with full type safety:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+// Define schemas
+const UserSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  email: z.string().email(),
+  role: z.enum(['admin', 'user', 'guest']),
+  createdAt: z.string().datetime(),
+});
+
+const PaginatedResponseSchema = z.object({
+  data: z.array(UserSchema),
+  nextPageCursor: z.string().nullable(),
+  previousPageCursor: z.string().nullable(),
+});
+
+// Create endpoint
+const getUsers = endpoint({
+  method: 'GET',
+  path: '/v1/users',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    cursor: z.string().optional(),
+    limit: z.number().min(1).max(100).default(25),
+  },
+  response: PaginatedResponseSchema,
+});
+
+// Fully typed usage
+const response = await fetchApi(getUsers, { limit: 50 });
+
+if (!isAnyErrorResponse(response)) {
+  // TypeScript knows exact types
+  response.data.forEach(user => {
+    console.log(user.id);    // number
+    console.log(user.role);  // 'admin' | 'user' | 'guest'
+  });
+  
+  const cursor = response.nextPageCursor; // string | null
+}
+```
+
+## Zod schema patterns
+
+### Enums and literals
+
+```typescript
+import { z } from 'zod';
+
+// Enum values
+const status = z.enum(['pending', 'active', 'archived']);
+
+// Single literal
+const method = z.literal('GET');
+
+// Union of literals
+const method = z.union([
+  z.literal('GET'),
+  z.literal('POST'),
+  z.literal('PUT'),
+]);
+```
+
+### Nested objects
+
+```typescript
+import { z } from 'zod';
+
+const UserSchema = z.object({
+  id: z.number(),
+  profile: z.object({
+    displayName: z.string(),
+    bio: z.string().optional(),
+    avatar: z.object({
+      url: z.string().url(),
+      width: z.number(),
+      height: z.number(),
+    }),
+  }),
+});
+```
+
+### Arrays and records
+
+```typescript
+import { z } from 'zod';
+
+// Array of specific type
+const numbers = z.array(z.number());
+
+// Array with min/max length
+const ids = z.array(z.number()).min(1).max(100);
+
+// Record/dictionary
+const metadata = z.record(z.string(), z.any());
+
+// Specific record keys
+const config = z.object({
+  settings: z.record(z.string(), z.boolean()),
+});
+```
+
+### Transformations
+
+```typescript
+import { z } from 'zod';
+
+// Parse string to number
+const stringToNumber = z.string().transform(val => parseInt(val, 10));
+
+// Date parsing
+const dateSchema = z.string().transform(val => new Date(val));
+
+// Custom transformation
+const upperCase = z.string().transform(val => val.toUpperCase());
+```
+
+### Refinements
+
+```typescript
+import { z } from 'zod';
+
+// Custom validation
+const password = z.string().refine(
+  val => val.length >= 8,
+  { message: 'Password must be at least 8 characters' }
+);
+
+// Multiple refinements
+const userId = z.number()
+  .int()
+  .positive()
+  .refine(val => val <= 2147483647, {
+    message: 'User ID exceeds maximum value'
+  });
+```
+
+## Type extraction utilities
+
+RoZod provides utilities to extract types from endpoints:
+
+```typescript
+import { type ExtractParams, type ExtractResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Extract parameter type
+type Params = ExtractParams<typeof getUsersUserdetails>;
+// { userIds: number[] }
+
+// Extract response type
+type Response = ExtractResponse<typeof getUsersUserdetails>;
+// { data: Array<{ id: number; name: string; ... }> }
+
+// Use in function signatures
+function processUsers(params: Params): void {
+  // params.userIds is correctly typed
+}
+
+function displayUsers(response: Response): void {
+  // response.data is correctly typed
+}
+```
+
+## Working with generic types
+
+Endpoints use generic types internally for flexibility:
+
+```typescript
+import { type EndpointGeneric } from 'rozod';
+
+// Type signature of endpoint definitions
+type MyEndpoint = EndpointGeneric<
+  { userId: number },        // Parameters
+  { id: number; name: string }, // Response
+  undefined                  // Body (optional)
+>;
+```
+
+<Tip>
+You rarely need to work with generic types directly. Use `ExtractParams` and `ExtractResponse` instead.
+</Tip>
+
+## Benefits of type safety
+
+### Compile-time validation
+
+Catch errors before runtime:
+
+```typescript
+// TypeScript catches this immediately
+await fetchApi(endpoint, {
+  userId: '123' // ❌ Error: Expected number, got string
+});
+
+// Correct
+await fetchApi(endpoint, {
+  userId: 123 // ✅
+});
+```
+
+### Autocomplete
+
+IDEs provide intelligent autocomplete:
+
+```typescript
+const response = await fetchApi(getUsersUserdetails, {
+  userIds: [123]
+});
+
+if (!isAnyErrorResponse(response)) {
+  response.data[0]. // IDE shows: id, name, displayName, hasVerifiedBadge, etc.
+}
+```
+
+### Refactoring safety
+
+Changing schemas updates types everywhere:
+
+```typescript
+// Change schema
+const endpoint = endpoint({
+  // ... other config
+  response: z.object({
+    userId: z.number(), // Renamed from 'id'
+    userName: z.string(), // Renamed from 'name'
+  }),
+});
+
+// TypeScript flags all uses of old property names
+response.id // ❌ Error: Property 'id' does not exist
+response.userId // ✅ Correct
+```
+
+### API contract enforcement
+
+Zod validation ensures APIs return expected data:
+
+```typescript
+// If API changes response structure, Zod catches it
+const response = await fetchApi(endpoint, params);
+// Zod validates response matches schema
+// Throws if API returns unexpected data
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Endpoints" icon="link" href="/concepts/endpoints">
+  Learn how to define and use typed API endpoints.
+</Card>
+
+<Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+  Understand error handling patterns with type safety.
+</Card>
+
+</CardGroup>

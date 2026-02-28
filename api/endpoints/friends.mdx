@@ -1,0 +1,385 @@
+---
+title: "Friends API"
+description: "Manage friendships, follow users, and handle friend requests"
+---
+
+The Friends API provides comprehensive functionality for managing friendships, followers, and friend requests on Roblox.
+
+## Importing endpoints
+
+Import the endpoints you need from the friends module:
+
+```typescript
+import { getUsersUseridFriends, postUsersTargetuseridRequestFriendship, getUsersUseridFriendsCount } from 'rozod/endpoints/friendsv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get user's friends
+
+Retrieve a list of all friends for a user.
+
+```typescript
+const friends = await fetchApi(getUsersUseridFriends, {
+  userId: 1234567890,
+  userSort: 0, // 0 = Alphabetical, 1 = StatusFrequents, 2 = StatusAlphabetical
+});
+
+if (!isAnyErrorResponse(friends)) {
+  friends.data.forEach((friend) => {
+    console.log(`${friend.displayName} (@${friend.name})`);
+    console.log(`Online: ${friend.isOnline}`);
+  });
+}
+```
+
+## Get friends count
+
+Get the total number of friends a user has.
+
+```typescript
+const count = await fetchApi(getUsersUseridFriendsCount, {
+  userId: 1234567890,
+});
+
+if (!isAnyErrorResponse(count)) {
+  console.log(`Total friends: ${count.count}`);
+}
+```
+
+## Send friend request
+
+Send a friend request to another user (requires authentication).
+
+```typescript
+const result = await fetchApi(postUsersTargetuseridRequestFriendship, {
+  targetUserId: 987654321,
+  body: {
+    friendshipOriginSourceType: 0, // 0 = Unknown, 1 = QRCode, etc.
+    senderNickname: '', // Optional nickname
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Friend request sent');
+  if (result.isCaptchaRequired) {
+    console.log('Captcha required');
+  }
+}
+```
+
+<Note>
+Some actions may require captcha verification. The response will indicate if a captcha is needed.
+</Note>
+
+## Get friend requests
+
+Retrieve pending friend requests for the authenticated user.
+
+```typescript
+import { getMyFriendsRequests } from 'rozod/endpoints/friendsv1';
+
+const requests = await fetchApi(getMyFriendsRequests, {
+  limit: 25,
+  friendRequestSort: 1, // 0 = RequestCreated, 1 = SentAt, 2 = RequestCreatedWithMutualFriends
+});
+
+if (!isAnyErrorResponse(requests)) {
+  requests.data.forEach((request) => {
+    console.log(`Request from: ${request.displayName}`);
+    console.log(`Mutual friends: ${request.mutualFriendsList.length}`);
+  });
+}
+```
+
+## Accept friend request
+
+Accept a pending friend request.
+
+```typescript
+import { postUsersRequesteruseridAcceptFriendRequest } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUsersRequesteruseridAcceptFriendRequest, {
+  requesterUserId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Friend request accepted');
+}
+```
+
+## Decline friend request
+
+Decline a pending friend request.
+
+```typescript
+import { postUsersRequesteruseridDeclineFriendRequest } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUsersRequesteruseridDeclineFriendRequest, {
+  requesterUserId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Friend request declined');
+}
+```
+
+## Unfriend a user
+
+Remove a user from your friends list.
+
+```typescript
+import { postUsersTargetuseridUnfriend } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUsersTargetuseridUnfriend, {
+  targetUserId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('User unfriended');
+}
+```
+
+## Following system
+
+### Follow a user
+
+```typescript
+import { postUsersTargetuseridFollow } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUsersTargetuseridFollow, {
+  targetUserId: 987654321,
+  body: {
+    captchaId: '',
+    captchaToken: '',
+    captchaProvider: '',
+    challengeId: '',
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Now following user');
+}
+```
+
+### Unfollow a user
+
+```typescript
+import { postUsersTargetuseridUnfollow } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUsersTargetuseridUnfollow, {
+  targetUserId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Unfollowed user');
+}
+```
+
+### Get followers
+
+Retrieve users following a specific user.
+
+```typescript
+import { getUsersTargetuseridFollowers } from 'rozod/endpoints/friendsv1';
+
+const followers = await fetchApi(getUsersTargetuseridFollowers, {
+  targetUserId: 1234567890,
+  limit: 50,
+});
+
+if (!isAnyErrorResponse(followers)) {
+  followers.data.forEach((follower) => {
+    console.log(`${follower.displayName} is following`);
+  });
+}
+```
+
+### Get following
+
+Retrieve users that a specific user is following.
+
+```typescript
+import { getUsersTargetuseridFollowings } from 'rozod/endpoints/friendsv1';
+
+const following = await fetchApi(getUsersTargetuseridFollowings, {
+  targetUserId: 1234567890,
+  limit: 50,
+});
+
+if (!isAnyErrorResponse(following)) {
+  following.data.forEach((user) => {
+    console.log(`Following: ${user.displayName}`);
+  });
+}
+```
+
+### Get follower/following counts
+
+```typescript
+import { getUsersTargetuseridFollowersCount, getUsersTargetuseridFollowingsCount } from 'rozod/endpoints/friendsv1';
+
+const followersCount = await fetchApi(getUsersTargetuseridFollowersCount, {
+  targetUserId: 1234567890,
+});
+
+const followingCount = await fetchApi(getUsersTargetuseridFollowingsCount, {
+  targetUserId: 1234567890,
+});
+
+if (!isAnyErrorResponse(followersCount) && !isAnyErrorResponse(followingCount)) {
+  console.log(`Followers: ${followersCount.count}`);
+  console.log(`Following: ${followingCount.count}`);
+}
+```
+
+## Search friends
+
+Search through a user's friends by name.
+
+```typescript
+import { getUsersUseridFriendsSearch } from 'rozod/endpoints/friendsv1';
+
+const results = await fetchApi(getUsersUseridFriendsSearch, {
+  userId: 1234567890,
+  query: 'john',
+  limit: 20,
+});
+
+if (!isAnyErrorResponse(results)) {
+  results.PageItems.forEach((friend) => {
+    console.log(`Found: ${friend.id}`);
+  });
+}
+```
+
+## Get online friends
+
+Retrieve only the friends who are currently online.
+
+```typescript
+import { getUsersUseridFriendsOnline } from 'rozod/endpoints/friendsv1';
+
+const onlineFriends = await fetchApi(getUsersUseridFriendsOnline, {
+  userId: 1234567890,
+});
+
+if (!isAnyErrorResponse(onlineFriends)) {
+  onlineFriends.data.forEach((friend) => {
+    console.log(`${friend.displayName} is online`);
+    console.log(`Location: ${friend.userPresence.lastLocation}`);
+  });
+}
+```
+
+## Check friend status
+
+Check the friendship status between users.
+
+```typescript
+import { getUsersUseridFriendsStatuses } from 'rozod/endpoints/friendsv1';
+
+const statuses = await fetchApi(getUsersUseridFriendsStatuses, {
+  userId: 1234567890,
+  userIds: [987654321, 555555555],
+});
+
+if (!isAnyErrorResponse(statuses)) {
+  statuses.data.forEach((status) => {
+    console.log(`User ${status.id}: ${status.status}`);
+    // status: 0 = NotFriends, 1 = Friends, 2 = RequestSent, 3 = RequestReceived
+  });
+}
+```
+
+## Batch operations
+
+### Check if users are friends
+
+```typescript
+import { postUserUseridMultigetAreFriends } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUserUseridMultigetAreFriends, {
+  userId: 1234567890,
+  body: {
+    targetUserIds: [987654321, 555555555, 333333333],
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Friends:', result.friendsId);
+}
+```
+
+### Check following status
+
+```typescript
+import { postUserFollowingExists } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUserFollowingExists, {
+  body: {
+    targetUserIds: [987654321, 555555555],
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  result.followings.forEach((follow) => {
+    console.log(`User ${follow.userId}:`);
+    console.log(`  Following: ${follow.isFollowing}`);
+    console.log(`  Followed by: ${follow.isFollowed}`);
+  });
+}
+```
+
+<Tip>
+Use pagination with the `cursor` parameter to fetch large friend lists efficiently. The Friends API supports limits of 10, 18, 25, 50, or 100 items per request.
+</Tip>
+
+## Get friend request count
+
+Get the count of pending friend requests.
+
+```typescript
+import { getUserFriendRequestsCount } from 'rozod/endpoints/friendsv1';
+
+const count = await fetchApi(getUserFriendRequestsCount, undefined);
+
+if (!isAnyErrorResponse(count)) {
+  console.log(`Pending requests: ${count.count}`);
+}
+```
+
+## Decline all friend requests
+
+Decline all pending friend requests at once.
+
+```typescript
+import { postUserFriendRequestsDeclineAll } from 'rozod/endpoints/friendsv1';
+
+const result = await fetchApi(postUserFriendRequestsDeclineAll, undefined);
+
+if (!isAnyErrorResponse(result)) {
+  if (result.backgrounded) {
+    console.log('Declining all requests in background');
+  }
+}
+```
+
+## Available endpoints
+
+All endpoints are exported from `rozod/endpoints/friendsv1`:
+
+- `getUsersUseridFriends` - Get user's friends
+- `getUsersUseridFriendsCount` - Get friend count
+- `postUsersTargetuseridRequestFriendship` - Send friend request
+- `postUsersRequesteruseridAcceptFriendRequest` - Accept friend request
+- `postUsersRequesteruseridDeclineFriendRequest` - Decline friend request
+- `postUsersTargetuseridUnfriend` - Unfriend user
+- `postUsersTargetuseridFollow` - Follow user
+- `postUsersTargetuseridUnfollow` - Unfollow user
+- `getUsersTargetuseridFollowers` - Get followers
+- `getUsersTargetuseridFollowings` - Get following
+- `getUsersUseridFriendsOnline` - Get online friends
+- `getUsersUseridFriendsSearch` - Search friends
+- And more...
+
+For the complete list, refer to the TypeScript types in your IDE.

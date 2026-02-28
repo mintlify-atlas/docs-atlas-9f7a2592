@@ -1,0 +1,501 @@
+---
+title: Challenge handling
+description: Handle authentication challenges including captcha and two-factor authentication
+---
+
+Roblox may present authentication challenges like captchas or two-factor authentication (2FA) for security. RoZod automatically detects these challenges and invokes your handler to solve them.
+
+## Setting up a challenge handler
+
+Configure a global challenge handler that RoZod will call when challenges occur:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  console.log('Challenge type:', challenge.challengeType);
+  console.log('Challenge ID:', challenge.challengeId);
+  
+  if (challenge.challengeType === 'captcha') {
+    // Solve captcha and return solution
+    const solution = await solveCaptcha(challenge.challengeId);
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  }
+  
+  // Return undefined to skip challenge
+  return undefined;
+});
+```
+
+<Info>
+The challenge handler is called automatically when Roblox returns challenge headers. You don't need to manually check for challenges.
+</Info>
+
+## Challenge types
+
+Roblox uses different challenge types:
+
+<Tabs>
+  <Tab title="Captcha">
+    FunCaptcha challenges for bot detection:
+    
+    ```typescript
+    setHandleGenericChallenge(async (challenge) => {
+      if (challenge.challengeType === 'captcha') {
+        // Display captcha to user or solve programmatically
+        const solution = await solveFunCaptcha({
+          publicKey: challenge.challengeId,
+          pageUrl: 'https://www.roblox.com'
+        });
+        
+        return {
+          challengeType: 'captcha',
+          challengeId: challenge.challengeId,
+          challengeBase64Metadata: solution
+        };
+      }
+    });
+    ```
+  </Tab>
+  <Tab title="Two-factor auth">
+    2FA code verification:
+    
+    ```typescript
+    setHandleGenericChallenge(async (challenge) => {
+      if (challenge.challengeType === 'twostepverification') {
+        // Prompt user for 2FA code
+        const code = await prompt2FACode();
+        
+        return {
+          challengeType: 'twostepverification',
+          challengeId: challenge.challengeId,
+          challengeBase64Metadata: btoa(code)
+        };
+      }
+    });
+    ```
+  </Tab>
+  <Tab title="Security questions">
+    Account security verification:
+    
+    ```typescript
+    setHandleGenericChallenge(async (challenge) => {
+      if (challenge.challengeType === 'securityquestions') {
+        // Answer security questions
+        const answers = await getSecurityAnswers();
+        
+        return {
+          challengeType: 'securityquestions',
+          challengeId: challenge.challengeId,
+          challengeBase64Metadata: btoa(JSON.stringify(answers))
+        };
+      }
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Challenge data structure
+
+The challenge object passed to your handler:
+
+```typescript
+type ParsedChallenge = {
+  /** Type of challenge: 'captcha', 'twostepverification', 'securityquestions', etc. */
+  challengeType: string;
+  /** Unique identifier for this challenge instance */
+  challengeId: string;
+  /** Optional metadata about the challenge */
+  challengeBase64Metadata?: string;
+};
+```
+
+Your handler should return the same structure with the solution in `challengeBase64Metadata`.
+
+## Captcha solving
+
+### Using a captcha service
+
+Integrate with captcha solving services:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+import { Solver } from '2captcha'; // Example service
+
+const solver = new Solver(process.env.CAPTCHA_API_KEY);
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challenge.challengeType === 'captcha') {
+    try {
+      const solution = await solver.funcaptcha({
+        publickey: challenge.challengeId,
+        pageurl: 'https://www.roblox.com',
+      });
+      
+      return {
+        challengeType: challenge.challengeType,
+        challengeId: challenge.challengeId,
+        challengeBase64Metadata: solution.data
+      };
+    } catch (error) {
+      console.error('Captcha solving failed:', error);
+      return undefined; // Skip challenge
+    }
+  }
+});
+```
+
+<Warning>
+Captcha solving services cost money per solve. Monitor usage and implement rate limiting to control costs.
+</Warning>
+
+### Manual captcha solving
+
+For user-facing applications, show captcha UI:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challenge.challengeType === 'captcha') {
+    // Show captcha modal to user
+    const solution = await new Promise((resolve) => {
+      showCaptchaModal({
+        challengeId: challenge.challengeId,
+        onSolved: (token) => resolve(token)
+      });
+    });
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  }
+});
+```
+
+## Two-factor authentication
+
+Handle 2FA challenges by prompting for codes:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challenge.challengeType === 'twostepverification') {
+    // Prompt user for 2FA code
+    const code = await prompt({
+      message: 'Enter your 2FA code:',
+      type: 'text'
+    });
+    
+    // Encode code as base64
+    const encoded = Buffer.from(code).toString('base64');
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: encoded
+    };
+  }
+});
+```
+
+<Note>
+For automated systems, consider storing 2FA backup codes or using app-based authenticators that can be automated.
+</Note>
+
+## Challenge flow
+
+How RoZod handles challenges:
+
+1. **Request made**: Initial API request is sent
+2. **Challenge detected**: Roblox returns challenge headers
+3. **Handler invoked**: Your `handleGenericChallenge` function is called
+4. **Solution returned**: Handler returns challenge response
+5. **Automatic retry**: RoZod retries the request with challenge headers
+6. **Success or failure**: Request succeeds or challenge fails
+
+```typescript
+// Internal RoZod flow (for reference)
+if (handleGenericChallengeFn) {
+  const challenge = parseChallengeHeaders(response.headers);
+  if (challenge && challengeRetries < MAX_CHALLENGE_RETRIES) {
+    const data = await handleGenericChallengeFn(challenge);
+    if (data) {
+      // Retry with challenge solution
+      return fetch(url, info, data, csrfRetries, challengeRetries + 1);
+    }
+  }
+}
+```
+
+<Info>
+RoZod retries up to 3 times for challenges. After 3 failures, the original response is returned.
+</Info>
+
+## Skipping challenges
+
+Return `undefined` to skip a challenge:
+
+```typescript
+setHandleGenericChallenge(async (challenge) => {
+  // Only handle captchas, skip everything else
+  if (challenge.challengeType !== 'captcha') {
+    return undefined;
+  }
+  
+  // Solve captcha
+  const solution = await solveCaptcha(challenge.challengeId);
+  return {
+    challengeType: challenge.challengeType,
+    challengeId: challenge.challengeId,
+    challengeBase64Metadata: solution
+  };
+});
+```
+
+<Warning>
+Skipping challenges (returning `undefined`) will cause the API request to fail with the original challenge error.
+</Warning>
+
+## Advanced patterns
+
+### Challenge queueing
+
+Queue challenges for batch processing:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+const challengeQueue: Array<{
+  challenge: ParsedChallenge;
+  resolve: (value: ParsedChallenge | undefined) => void;
+}> = [];
+
+setHandleGenericChallenge(async (challenge) => {
+  // Add to queue
+  return new Promise((resolve) => {
+    challengeQueue.push({ challenge, resolve });
+  });
+});
+
+// Process queue separately
+setInterval(async () => {
+  if (challengeQueue.length === 0) return;
+  
+  const batch = challengeQueue.splice(0, 10);
+  const solutions = await solveCaptchaBatch(
+    batch.map(item => item.challenge)
+  );
+  
+  batch.forEach((item, i) => {
+    item.resolve(solutions[i]);
+  });
+}, 5000);
+```
+
+### Rate limiting challenges
+
+Limit challenge solving to control costs:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+let challengesThisHour = 0;
+const MAX_CHALLENGES_PER_HOUR = 100;
+
+setInterval(() => {
+  challengesThisHour = 0;
+}, 60 * 60 * 1000);
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challengesThisHour >= MAX_CHALLENGES_PER_HOUR) {
+    console.warn('Challenge rate limit reached');
+    return undefined;
+  }
+  
+  challengesThisHour++;
+  const solution = await solveCaptcha(challenge.challengeId);
+  
+  return {
+    challengeType: challenge.challengeType,
+    challengeId: challenge.challengeId,
+    challengeBase64Metadata: solution
+  };
+});
+```
+
+### Fallback strategies
+
+Implement fallbacks when challenge solving fails:
+
+```typescript
+setHandleGenericChallenge(async (challenge) => {
+  // Try primary solver
+  try {
+    const solution = await primarySolver.solve(challenge);
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  } catch (error) {
+    console.error('Primary solver failed:', error);
+  }
+  
+  // Try fallback solver
+  try {
+    const solution = await fallbackSolver.solve(challenge);
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  } catch (error) {
+    console.error('Fallback solver failed:', error);
+  }
+  
+  // Give up
+  return undefined;
+});
+```
+
+## Error handling
+
+Handle errors in challenge solving:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  try {
+    const solution = await solveCaptcha(challenge.challengeId);
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  } catch (error) {
+    console.error('Challenge solving error:', error);
+    
+    // Log for monitoring
+    await logError({
+      type: 'challenge_solving_failed',
+      challengeType: challenge.challengeType,
+      error: error.message,
+    });
+    
+    return undefined; // Skip challenge
+  }
+});
+
+// Handle challenge failures in API calls
+const result = await fetchApi(endpoint, params);
+if (isAnyErrorResponse(result)) {
+  if (result.message.includes('challenge')) {
+    console.error('Challenge was required but not solved');
+    // Implement retry or alert logic
+  }
+}
+```
+
+## Testing
+
+Test your challenge handler:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+// Mock challenge handler for testing
+setHandleGenericChallenge(async (challenge) => {
+  console.log('Test: Challenge received', challenge);
+  
+  // Return mock solution
+  return {
+    challengeType: challenge.challengeType,
+    challengeId: challenge.challengeId,
+    challengeBase64Metadata: 'mock_solution_for_testing'
+  };
+});
+
+// Make requests that might trigger challenges
+const result = await fetchApi(endpoint, params);
+console.log('Test: Result', result);
+```
+
+<Warning>
+Mock solutions will fail in production. Only use mocking for development and testing.
+</Warning>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Handle all challenge types">
+    Implement handlers for all challenge types you might encounter: captcha, 2FA, security questions, etc.
+  </Accordion>
+  
+  <Accordion title="Log challenge events">
+    Track when challenges occur to identify patterns, monitor costs, and detect anomalies.
+  </Accordion>
+  
+  <Accordion title="Implement timeouts">
+    Set timeouts for challenge solving to avoid hanging requests indefinitely.
+  </Accordion>
+  
+  <Accordion title="Monitor solve rates">
+    Track success rates for challenge solving to detect issues with your solver or configuration.
+  </Accordion>
+  
+  <Accordion title="Cache solutions when possible">
+    Some challenges may be reusable for a short period. Cache solutions to reduce costs.
+  </Accordion>
+  
+  <Accordion title="Use error tracking">
+    Implement error tracking to detect and alert on challenge solving failures.
+  </Accordion>
+</AccordionGroup>
+
+## Challenge prevention
+
+Minimize challenges by:
+
+- **Using realistic user agents**: RoZod includes browser-like user agents
+- **Rate limiting requests**: Avoid aggressive request patterns
+- **Using cookie pools**: Distribute load across multiple accounts
+- **Maintaining good account health**: Avoid actions that trigger security flags
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: [cookie1, cookie2, cookie3],
+  cookieRotation: 'round-robin',
+  userAgents: ['realistic', 'browser', 'user agents'],
+  userAgentRotation: 'random',
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand all security mechanisms
+  </Card>
+  <Card title="Cookie pools" icon="layer-group" href="/auth/cookie-pools">
+    Use multiple accounts to reduce challenges
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle challenge-related errors
+  </Card>
+  <Card title="Browser authentication" icon="globe" href="/auth/browser">
+    Learn about browser-specific challenges
+  </Card>
+</CardGroup>

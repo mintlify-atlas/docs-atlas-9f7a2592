@@ -1,0 +1,205 @@
+---
+title: "Making basic API requests"
+description: "Learn how to make API requests with RoZod and handle responses"
+---
+
+## Overview
+
+RoZod provides a simple, type-safe interface for making requests to Roblox APIs. The `fetchApi` function handles authentication, CSRF tokens, and error parsing automatically.
+
+## Basic request structure
+
+Every API request in RoZod follows this pattern:
+
+<Steps>
+  <Step title="Import the fetchApi function and endpoint">
+    ```typescript
+    import { fetchApi } from 'rozod';
+    import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+    ```
+  </Step>
+  
+  <Step title="Call fetchApi with the endpoint and parameters">
+    ```typescript
+    const response = await fetchApi(getUsersUserdetails, { 
+      userIds: [1, 123456] 
+    });
+    ```
+  </Step>
+  
+  <Step title="Handle the response">
+    ```typescript
+    if (isAnyErrorResponse(response)) {
+      console.error(response.message);
+    } else {
+      console.log(response.data[0].displayName);
+    }
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's a complete example fetching game icons:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(getGamesIcons, { 
+  universeIds: [1534453623, 65241] 
+});
+
+console.log(response.data);
+```
+
+<Info>
+  All parameters are fully type-checked. TypeScript will show you exactly what parameters each endpoint accepts.
+</Info>
+
+## Error handling
+
+RoZod provides two approaches to error handling:
+
+### Union type approach (default)
+
+By default, `fetchApi` returns either the success type or an `AnyError` object:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const res = await fetchApi(getGamesIcons, { universeIds: [1534453623] });
+
+if (isAnyErrorResponse(res)) {
+  console.error(res.message);
+} else {
+  console.log(res.data); // Fully typed success response
+}
+```
+
+<Tip>
+  Use `isAnyErrorResponse()` to narrow the type and get full TypeScript safety for both success and error cases.
+</Tip>
+
+### Throw on error
+
+If you prefer try/catch blocks, enable `throwOnError`:
+
+```typescript
+try {
+  const res = await fetchApi(
+    getGamesIcons, 
+    { universeIds: [1534453623] }, 
+    { throwOnError: true }
+  );
+  console.log(res.data);
+} catch (err) {
+  console.error((err as Error).message);
+}
+```
+
+## Request options
+
+You can customize requests with additional options:
+
+<CodeGroup>
+```typescript Custom headers
+const response = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [123456] },
+  {
+    headers: {
+      'Cookie': '.ROBLOSECURITY=your_cookie_here'
+    }
+  }
+);
+```
+
+```typescript Retry configuration
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    retries: 3,
+    retryDelay: 1000 // milliseconds
+  }
+);
+```
+
+```typescript Cache responses
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    cacheTime: 60000, // 60 seconds
+    cacheKey: 'my-game-icons',
+    cacheType: 'memory' // or 'local' or 'chrome'
+  }
+);
+```
+</CodeGroup>
+
+## Getting raw responses
+
+If you need access to the raw `Response` object, use `returnRaw`:
+
+```typescript
+const resp = await fetchApi(
+  getGamesIcons, 
+  { universeIds: [1534453623] }, 
+  { returnRaw: true }
+);
+
+// Access raw response properties
+console.log(resp.status);
+console.log(resp.headers.get('content-type'));
+
+const json = await resp.json();
+```
+
+<Warning>
+  When using `returnRaw: true`, you must manually parse the response body and handle errors.
+</Warning>
+
+## Type safety
+
+RoZod endpoints are fully typed, providing autocomplete and type checking:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const response = await fetchApi(getUsersUserdetails, { 
+  userIds: [1, 123456] 
+});
+
+if (!isAnyErrorResponse(response)) {
+  // TypeScript knows the exact shape of response.data
+  response.data.forEach(user => {
+    console.log(user.displayName); // ✓ Type-safe
+    console.log(user.username);    // ✓ Type-safe
+    console.log(user.invalid);     // ✗ TypeScript error
+  });
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Pagination" icon="list" href="/guides/pagination">
+    Learn how to handle paginated API responses
+  </Card>
+  
+  <Card title="Batch processing" icon="layer-group" href="/guides/batch-processing">
+    Process large requests efficiently
+  </Card>
+  
+  <Card title="Custom endpoints" icon="puzzle-piece" href="/guides/custom-endpoints">
+    Define your own API endpoints
+  </Card>
+  
+  <Card title="OpenCloud" icon="cloud" href="/guides/opencloud">
+    Use Roblox OpenCloud APIs
+  </Card>
+</CardGroup>

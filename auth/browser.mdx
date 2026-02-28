@@ -1,0 +1,168 @@
+---
+title: Browser authentication
+description: How RoZod handles authentication automatically in browser environments
+---
+
+In browser environments (Chrome extensions, web apps, etc.), RoZod automatically handles authentication using the user's active Roblox session. No configuration is required.
+
+## Automatic cookie handling
+
+When users are logged into Roblox in their browser, RoZod automatically includes their authentication cookies with every request:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Cookies are sent automatically - no setup required!
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+<Info>
+RoZod uses `credentials: 'include'` by default to ensure cookies are sent with cross-origin requests to Roblox domains.
+</Info>
+
+## How it works
+
+RoZod automatically detects when running in a browser environment and:
+
+1. **Includes credentials**: All requests use `credentials: 'include'` to send cookies
+2. **Handles XCSRF tokens**: Automatically retrieves and includes CSRF tokens for write operations
+3. **Manages HBA signatures**: Generates hardware-backed authentication signatures when needed
+4. **Handles challenges**: Processes captcha and 2FA challenges if configured
+
+## Browser detection
+
+RoZod detects browser environments by checking if the current page is on a `.roblox.com` domain:
+
+```typescript
+// Internal RoZod logic (for reference)
+const onRobloxSite = 'document' in globalThis && 
+                      globalThis.location.href.includes('.roblox.com');
+```
+
+When running on a Roblox domain, RoZod:
+- Skips server-specific configuration (cookies, user agents)
+- Uses the browser's native cookie handling
+- Automatically enables HBA authentication
+
+## Use cases
+
+### Browser extensions
+
+RoZod is production-tested in [RoGold](https://rogold.live), a browser extension with 800,000+ active users:
+
+```typescript
+// Extension background script or content script
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Works automatically in Chrome, Firefox, Edge, etc.
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+### Web applications
+
+For web apps that need to make requests to Roblox APIs:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+// Fetch data for the logged-in user
+const posts = await fetchApi(getGroupsGroupidWallPosts, { groupId: 11479637 });
+```
+
+<Warning>
+Browser-based requests are subject to CORS restrictions. Your web app must be hosted on a `.roblox.com` domain or use a proxy server for cross-origin requests.
+</Warning>
+
+## Manual headers (advanced)
+
+In rare cases where you need to override default behavior, you can pass custom headers:
+
+```typescript
+const userInfo = await fetchApi(
+  getUsersUserdetails,
+  { userIds: [123456] },
+  {
+    credentials: 'same-origin', // Override default 'include'
+    headers: {
+      'Custom-Header': 'value'
+    }
+  }
+);
+```
+
+<Note>
+Manual headers should rarely be needed. The automatic behavior works for the vast majority of use cases.
+</Note>
+
+## Security considerations
+
+### Cookie security
+
+RoZod leverages the browser's built-in cookie security:
+- Cookies are `HttpOnly` and `Secure` by default (managed by Roblox)
+- Same-site protections prevent CSRF attacks
+- Cookies are scoped to `.roblox.com` domains
+
+### Challenge handling
+
+If Roblox presents authentication challenges (captcha, 2FA), you can configure a handler:
+
+```typescript
+import { setHandleGenericChallenge } from 'rozod';
+
+setHandleGenericChallenge(async (challenge) => {
+  if (challenge.challengeType === 'captcha') {
+    // Show captcha UI to user and get solution
+    const solution = await showCaptchaModal(challenge.challengeId);
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution
+    };
+  }
+});
+```
+
+<Info>
+See [Challenge handling](/auth/challenge-handling) for more details on implementing challenge handlers.
+</Info>
+
+## Debugging
+
+To verify that authentication is working in the browser:
+
+1. **Check browser DevTools**: Open Network tab and verify `.ROBLOSECURITY` cookie is sent
+2. **Check response headers**: Look for `x-csrf-token` headers in responses
+3. **Test with error handling**: Use `isAnyErrorResponse()` to catch auth errors
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+if (isAnyErrorResponse(userInfo)) {
+  console.error('Authentication failed:', userInfo.message);
+} else {
+  console.log('Authenticated user:', userInfo.data[0].displayName);
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Learn about server-side authentication configuration
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand automatic security mechanisms
+  </Card>
+  <Card title="Challenge handling" icon="puzzle-piece" href="/auth/challenge-handling">
+    Implement captcha and 2FA handlers
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle authentication errors gracefully
+  </Card>
+</CardGroup>

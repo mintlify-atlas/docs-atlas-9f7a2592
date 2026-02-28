@@ -1,0 +1,539 @@
+---
+title: Universe APIs
+description: Manage Roblox experiences, places, and servers with OpenCloud Universe endpoints
+---
+
+Universe APIs allow you to manage your Roblox experiences, including retrieving metadata, updating settings, publishing places, and controlling servers.
+
+## Overview
+
+Universe operations include:
+
+- Get and update experience metadata
+- Restart servers
+- Publish places
+- Manage social links and settings
+- Generate speech assets
+- Translate text
+
+## Import
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+```
+</CodeGroup>
+
+## Authentication
+
+Universe operations require specific scopes:
+
+- `universe:read` - Read universe metadata (v2 endpoints don't require auth for basic reads)
+- `universe:write` - Update universe settings and restart servers
+- `universe-places:write` - Publish places
+- `universe-messaging-service:publish` - Publish messages (see [Messaging APIs](/api/opencloud/messaging))
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cloudKey: 'your_api_key_with_universe_scopes' 
+});
+```
+
+## Get universe details
+
+Retrieve metadata about an experience:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const universe = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+console.log(universe.displayName);      // Experience name
+console.log(universe.description);      // Description
+console.log(universe.visibility);       // PUBLIC or PRIVATE
+console.log(universe.voiceChatEnabled); // Voice chat setting
+console.log(universe.ageRating);        // Age rating
+console.log(universe.user);             // Owner user (if user-owned)
+console.log(universe.group);            // Owner group (if group-owned)
+
+// Platform settings
+console.log(universe.desktopEnabled);
+console.log(universe.mobileEnabled);
+console.log(universe.tabletEnabled);
+console.log(universe.consoleEnabled);
+console.log(universe.vrEnabled);
+
+// Social links
+console.log(universe.facebookSocialLink);
+console.log(universe.twitterSocialLink);
+console.log(universe.youtubeSocialLink);
+console.log(universe.twitchSocialLink);
+console.log(universe.discordSocialLink);
+```
+
+<Info>
+v2 universe read endpoints don't require authentication, making them accessible from public clients.
+</Info>
+
+## Update universe settings
+
+Modify experience configuration:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const updated = await fetchApi(
+  v2.patchCloudV2UniversesUniverseId,
+  {
+    universe_id: '123456789',
+    updateMask: 'displayName,description,voiceChatEnabled',
+  },
+  {
+    displayName: 'My Awesome Game',
+    description: 'An epic adventure awaits!',
+    voiceChatEnabled: true,
+  }
+);
+```
+
+### Update social links
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const updated = await fetchApi(
+  v2.patchCloudV2UniversesUniverseId,
+  {
+    universe_id: '123456789',
+    updateMask: 'discordSocialLink,twitterSocialLink',
+  },
+  {
+    discordSocialLink: {
+      title: 'Join our Discord',
+      uri: 'https://discord.gg/example',
+    },
+    twitterSocialLink: {
+      title: 'Follow us on Twitter',
+      uri: 'https://twitter.com/example',
+    },
+  }
+);
+```
+
+### Platform settings
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const updated = await fetchApi(
+  v2.patchCloudV2UniversesUniverseId,
+  {
+    universe_id: '123456789',
+    updateMask: 'desktopEnabled,mobileEnabled,vrEnabled',
+  },
+  {
+    desktopEnabled: true,
+    mobileEnabled: true,
+    vrEnabled: false,
+  }
+);
+```
+
+## Restart servers
+
+Restart all active servers for an experience:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Restart all servers running older versions
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  {
+    closeAllVersions: false,    // Only restart old versions
+    bleedOffServers: false,     // Immediately close servers
+  }
+);
+
+// Restart ALL servers immediately
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  {
+    closeAllVersions: true,     // Restart all versions
+    bleedOffServers: false,     // Immediately close
+  }
+);
+
+// Graceful restart with bleed-off period
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  {
+    closeAllVersions: true,
+    bleedOffServers: true,
+    bleedOffDurationMinutes: 10,  // 10 minute grace period
+  }
+);
+```
+
+### Restart specific places
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  {
+    placeIds: [987654321, 123456789],  // Only restart these places
+    closeAllVersions: true,
+    bleedOffServers: false,
+  }
+);
+```
+
+<Warning>
+Restarting servers will disconnect all players. Use `bleedOffServers: true` for graceful shutdowns.
+</Warning>
+
+## Publish a place
+
+Upload and publish a place file:
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+import * as fs from 'fs';
+
+const placeFile = fs.readFileSync('MyPlace.rbxl');
+
+await fetchApi(
+  v1.universes.postUniverseIdPlacesPlaceIdVersions,
+  {
+    universeId: 123456789,
+    placeId: 987654321,
+    versionType: 'Published',  // Or 'Saved' to save without publishing
+  },
+  placeFile
+);
+```
+
+<Note>
+Place publishing is only available in v1. The file must be in RBXL or RBXLX format.
+</Note>
+
+## Generate speech asset
+
+Create text-to-speech audio assets:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const operation = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdGenerateSpeechAsset,
+  { universe_id: '123456789' },
+  {
+    text: 'Welcome to the game!',
+    speechStyle: {
+      voiceId: 'en-US-Standard-A',
+      pitch: 0.0,
+      speed: 1.0,
+    },
+  }
+);
+
+console.log('Operation:', operation.path);
+// Poll the operation endpoint to check completion
+```
+
+<Info>
+This endpoint requires `asset:read` and `asset:write` scopes in addition to `universe:write`.
+</Info>
+
+## Translate text
+
+Translate text to multiple languages:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const translation = await fetchApi(
+  v2.postCloudV2UniversesUniverseIdTranslateText,
+  { universe_id: '123456789' },
+  {
+    text: 'Hello, world!',
+    sourceLanguageCode: 'en',
+    targetLanguageCodes: ['es', 'fr', 'de', 'ja'],
+  }
+);
+
+console.log('Source:', translation.sourceLanguageCode);
+console.log('Translations:', translation.translations);
+```
+
+## Common workflows
+
+### Deploy update workflow
+
+Complete workflow for deploying an experience update:
+
+```typescript
+import { fetchApi, configureServer } from 'rozod';
+import { v1, v2 } from 'rozod/lib/opencloud';
+import * as fs from 'fs';
+
+configureServer({ cloudKey: process.env.ROBLOX_CLOUD_KEY });
+
+const UNIVERSE_ID = '123456789';
+const PLACE_ID = 987654321;
+
+async function deployUpdate() {
+  console.log('1. Publishing new place version...');
+  const placeFile = fs.readFileSync('UpdatedPlace.rbxl');
+  await fetchApi(
+    v1.universes.postUniverseIdPlacesPlaceIdVersions,
+    {
+      universeId: parseInt(UNIVERSE_ID),
+      placeId: PLACE_ID,
+      versionType: 'Published',
+    },
+    placeFile
+  );
+
+  console.log('2. Notifying players...');
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: UNIVERSE_ID },
+    {
+      topic: 'update-notification',
+      message: JSON.stringify({
+        type: 'update',
+        message: 'New update available! Servers restarting in 2 minutes.',
+      }),
+    }
+  );
+
+  console.log('3. Waiting 2 minutes...');
+  await new Promise(resolve => setTimeout(resolve, 120000));
+
+  console.log('4. Restarting servers...');
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdRestartServers,
+    { universe_id: UNIVERSE_ID },
+    {
+      closeAllVersions: true,
+      bleedOffServers: true,
+      bleedOffDurationMinutes: 5,
+    }
+  );
+
+  console.log('Deployment complete!');
+}
+
+await deployUpdate();
+```
+
+### Update metadata and settings
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function updateExperienceSettings() {
+  // Update basic info
+  await fetchApi(
+    v2.patchCloudV2UniversesUniverseId,
+    {
+      universe_id: '123456789',
+      updateMask: 'displayName,description',
+    },
+    {
+      displayName: 'Epic Adventure - Winter Update',
+      description: 'New winter-themed content and features!',
+    }
+  );
+
+  // Enable voice chat
+  await fetchApi(
+    v2.patchCloudV2UniversesUniverseId,
+    {
+      universe_id: '123456789',
+      updateMask: 'voiceChatEnabled',
+    },
+    {
+      voiceChatEnabled: true,
+    }
+  );
+
+  // Update social links
+  await fetchApi(
+    v2.patchCloudV2UniversesUniverseId,
+    {
+      universe_id: '123456789',
+      updateMask: 'discordSocialLink,youtubeSocialLink',
+    },
+    {
+      discordSocialLink: {
+        title: 'Official Discord',
+        uri: 'https://discord.gg/mygame',
+      },
+      youtubeSocialLink: {
+        title: 'Watch Trailer',
+        uri: 'https://youtube.com/watch?v=example',
+      },
+    }
+  );
+}
+
+await updateExperienceSettings();
+```
+
+### Monitor and restart
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function monitorAndRestart() {
+  // Get current status
+  const universe = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+    universe_id: '123456789',
+  });
+
+  console.log(`Experience: ${universe.displayName}`);
+  console.log(`Visibility: ${universe.visibility}`);
+
+  // Check if update is needed (your custom logic)
+  const needsUpdate = await checkForUpdate();
+
+  if (needsUpdate) {
+    console.log('Update detected, restarting servers...');
+    
+    // Send warning
+    await fetchApi(
+      v2.postCloudV2UniversesUniverseIdPublishMessage,
+      { universe_id: '123456789' },
+      {
+        topic: 'system',
+        message: 'Restarting for update in 60 seconds',
+      }
+    );
+
+    // Wait then restart
+    await new Promise(resolve => setTimeout(resolve, 60000));
+    
+    await fetchApi(
+      v2.postCloudV2UniversesUniverseIdRestartServers,
+      { universe_id: '123456789' },
+      {
+        closeAllVersions: true,
+        bleedOffServers: false,
+      }
+    );
+  }
+}
+
+function checkForUpdate(): Promise<boolean> {
+  // Your logic to check if update is available
+  return Promise.resolve(false);
+}
+```
+
+## Best practices
+
+### Always notify before restarting
+
+```typescript
+// Good: Warn players first
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdPublishMessage,
+  { universe_id: '123456789' },
+  { topic: 'shutdown', message: 'Restarting in 5 minutes' }
+);
+
+await new Promise(resolve => setTimeout(resolve, 300000));
+
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  { closeAllVersions: true, bleedOffServers: true }
+);
+
+// Bad: Immediate restart without warning
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  { closeAllVersions: true, bleedOffServers: false }
+);
+```
+
+### Use bleed-off for graceful shutdowns
+
+```typescript
+// Recommended for production
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdRestartServers,
+  { universe_id: '123456789' },
+  {
+    closeAllVersions: true,
+    bleedOffServers: true,
+    bleedOffDurationMinutes: 10,
+  }
+);
+```
+
+### Validate settings before updating
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function safeUpdateUniverse(settings: any) {
+  // Get current settings first
+  const current = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+    universe_id: '123456789',
+  });
+
+  // Validate changes
+  if (settings.displayName && settings.displayName.length > 50) {
+    throw new Error('Display name too long');
+  }
+
+  // Apply update
+  return await fetchApi(
+    v2.patchCloudV2UniversesUniverseId,
+    {
+      universe_id: '123456789',
+      updateMask: Object.keys(settings).join(','),
+    },
+    settings
+  );
+}
+```
+
+## Related APIs
+
+- [Messaging APIs](/api/opencloud/messaging) - Publish messages to live servers
+- [DataStores](/api/opencloud/datastores) - Manage persistent data
+- [Assets](/api/opencloud/assets) - Upload and manage assets
+- [Overview](/api/opencloud/overview) - OpenCloud setup and authentication

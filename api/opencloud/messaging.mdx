@@ -1,0 +1,483 @@
+---
+title: Messaging APIs
+description: Cross-server communication with OpenCloud Messaging Service
+---
+
+Messaging APIs enable you to publish messages to live game servers from external services, allowing for real-time communication and coordination across your experience.
+
+## Overview
+
+The Messaging Service allows you to:
+
+- Send announcements to all servers
+- Trigger events across your experience
+- Coordinate server shutdowns or updates
+- Broadcast real-time data updates
+
+Messages can be up to **1,024 characters (1 KB)** in size.
+
+## Import
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+```
+</CodeGroup>
+
+## Authentication
+
+Messaging operations require the `universe-messaging-service:publish` scope in your API key:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cloudKey: 'your_api_key_with_messaging_scope' 
+});
+```
+
+## Publish a message
+
+Send a message to all live servers subscribed to a topic:
+
+<CodeGroup>
+```typescript v2 (Recommended)
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Publish to a topic
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdPublishMessage,
+  {
+    universe_id: '123456789',
+  },
+  {
+    topic: 'announcements',
+    message: 'Server maintenance in 5 minutes',
+  }
+);
+```
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+await fetchApi(
+  v1.messaging.postUniversesUniverseIdTopicsTopic,
+  {
+    universeId: 123456789,
+    topic: 'announcements',
+  },
+  {
+    message: 'Server maintenance in 5 minutes',
+  }
+);
+```
+</CodeGroup>
+
+## Topics
+
+Topics are string identifiers up to **80 characters** that servers subscribe to. Use descriptive topic names:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// System announcements
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdPublishMessage,
+  { universe_id: '123456789' },
+  {
+    topic: 'system-announcements',
+    message: JSON.stringify({ type: 'maintenance', minutes: 5 }),
+  }
+);
+
+// Moderation events
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdPublishMessage,
+  { universe_id: '123456789' },
+  {
+    topic: 'moderation-events',
+    message: JSON.stringify({ action: 'ban', userId: 156 }),
+  }
+);
+
+// Economy updates
+await fetchApi(
+  v2.postCloudV2UniversesUniverseIdPublishMessage,
+  { universe_id: '123456789' },
+  {
+    topic: 'economy-updates',
+    message: JSON.stringify({ itemId: 'sword_001', newPrice: 500 }),
+  }
+);
+```
+
+## Receiving messages in-game
+
+Servers subscribe to topics using Roblox's MessagingService:
+
+```lua
+local MessagingService = game:GetService("MessagingService")
+
+-- Subscribe to a topic
+local connection = MessagingService:SubscribeAsync("announcements", function(message)
+    print("Received message:", message.Data)
+    
+    -- Broadcast to all players
+    for _, player in pairs(game.Players:GetPlayers()) do
+        player:Kick(message.Data)
+    end
+end)
+```
+
+## Common use cases
+
+### Server announcements
+
+Notify all players across all servers:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function broadcastAnnouncement(message: string) {
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    {
+      topic: 'announcements',
+      message: JSON.stringify({
+        type: 'announcement',
+        text: message,
+        timestamp: Date.now(),
+      }),
+    }
+  );
+}
+
+await broadcastAnnouncement('New event starting now!');
+```
+
+### Coordinated server shutdown
+
+Gracefully shut down all servers:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function scheduleShutdown(minutes: number) {
+  // Warn players
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    {
+      topic: 'shutdown',
+      message: JSON.stringify({
+        action: 'warning',
+        minutes: minutes,
+      }),
+    }
+  );
+
+  // Wait and then shut down
+  setTimeout(async () => {
+    await fetchApi(
+      v2.postCloudV2UniversesUniverseIdPublishMessage,
+      { universe_id: '123456789' },
+      {
+        topic: 'shutdown',
+        message: JSON.stringify({
+          action: 'shutdown',
+        }),
+      }
+    );
+  }, minutes * 60 * 1000);
+}
+
+await scheduleShutdown(5);
+```
+
+### Real-time data sync
+
+Sync external data to all servers:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function syncGameData(data: any) {
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    {
+      topic: 'data-sync',
+      message: JSON.stringify({
+        type: 'update',
+        data: data,
+        version: '1.0.0',
+      }),
+    }
+  );
+}
+
+const gameConfig = {
+  maxPlayers: 50,
+  eventActive: true,
+  specialItems: ['item1', 'item2'],
+};
+
+await syncGameData(gameConfig);
+```
+
+### Player moderation
+
+Notify servers about moderation actions:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function banPlayer(userId: number, reason: string) {
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    {
+      topic: 'moderation',
+      message: JSON.stringify({
+        action: 'ban',
+        userId: userId,
+        reason: reason,
+        timestamp: Date.now(),
+      }),
+    }
+  );
+}
+
+await banPlayer(156, 'Violation of terms of service');
+```
+
+## Message format
+
+Messages are strings, but you can send structured data using JSON:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+interface GameEvent {
+  type: 'boss-spawn' | 'treasure-drop' | 'double-xp';
+  data: any;
+  duration?: number;
+}
+
+async function triggerEvent(event: GameEvent) {
+  await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    {
+      topic: 'game-events',
+      message: JSON.stringify(event),
+    }
+  );
+}
+
+await triggerEvent({
+  type: 'boss-spawn',
+  data: {
+    bossId: 'dragon_001',
+    location: 'volcano',
+    health: 10000,
+  },
+  duration: 300,
+});
+```
+
+## Error handling
+
+Handle common errors when publishing messages:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function publishMessageSafely(topic: string, message: string) {
+  // Validate message size
+  if (message.length > 1024) {
+    throw new Error('Message exceeds 1KB limit');
+  }
+
+  // Validate topic length
+  if (topic.length > 80) {
+    throw new Error('Topic exceeds 80 character limit');
+  }
+
+  const result = await fetchApi(
+    v2.postCloudV2UniversesUniverseIdPublishMessage,
+    { universe_id: '123456789' },
+    { topic, message }
+  );
+
+  if (isAnyErrorResponse(result)) {
+    console.error('Failed to publish message:', result.message);
+    throw new Error(result.message);
+  }
+
+  console.log('Message published successfully');
+}
+```
+
+## Rate limits
+
+Messaging Service has the following limits:
+
+- **Published messages**: 150 + 60 * (number of servers) per minute
+- **Message size**: 1,024 characters (1 KB)
+- **Topic length**: 80 characters
+
+<Warning>
+Exceeding rate limits will result in `429 Too Many Requests` errors. Implement exponential backoff for retries.
+</Warning>
+
+## Best practices
+
+### Use structured messages
+
+```typescript
+// Good: Structured JSON
+const message = JSON.stringify({
+  type: 'announcement',
+  priority: 'high',
+  text: 'Server restarting soon',
+});
+
+// Bad: Unstructured string
+const message = 'Server restarting soon';
+```
+
+### Include timestamps
+
+```typescript
+const message = JSON.stringify({
+  event: 'update',
+  timestamp: Date.now(),
+  data: { version: '2.0' },
+});
+```
+
+### Handle failures gracefully
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+async function publishWithRetry(
+  topic: string,
+  message: string,
+  maxRetries = 3
+) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const result = await fetchApi(
+      v2.postCloudV2UniversesUniverseIdPublishMessage,
+      { universe_id: '123456789' },
+      { topic, message }
+    );
+
+    if (!isAnyErrorResponse(result)) {
+      return; // Success
+    }
+
+    console.warn(`Attempt ${attempt} failed:`, result.message);
+
+    if (attempt < maxRetries) {
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error(`Failed to publish after ${maxRetries} attempts`);
+}
+```
+
+### Use topic namespacing
+
+```typescript
+// Good: Namespaced topics
+const topics = {
+  system: 'system.announcements',
+  events: 'game.events',
+  moderation: 'moderation.actions',
+  economy: 'economy.updates',
+};
+
+// Bad: Generic topics
+const topics = ['topic1', 'topic2', 'topic3'];
+```
+
+## Complete example
+
+```typescript
+import { fetchApi, configureServer } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Setup
+configureServer({ cloudKey: process.env.ROBLOX_CLOUD_KEY });
+
+interface ServerMessage {
+  type: string;
+  data: any;
+  timestamp: number;
+}
+
+class MessagingClient {
+  constructor(private universeId: string) {}
+
+  async publish(topic: string, data: any): Promise<void> {
+    const message: ServerMessage = {
+      type: topic,
+      data: data,
+      timestamp: Date.now(),
+    };
+
+    const messageStr = JSON.stringify(message);
+
+    if (messageStr.length > 1024) {
+      throw new Error('Message too large');
+    }
+
+    await fetchApi(
+      v2.postCloudV2UniversesUniverseIdPublishMessage,
+      { universe_id: this.universeId },
+      { topic, message: messageStr }
+    );
+  }
+
+  async broadcastAnnouncement(text: string): Promise<void> {
+    await this.publish('announcements', { text });
+  }
+
+  async triggerEvent(eventType: string, eventData: any): Promise<void> {
+    await this.publish('game-events', { type: eventType, ...eventData });
+  }
+}
+
+// Usage
+const client = new MessagingClient('123456789');
+
+await client.broadcastAnnouncement('New feature available!');
+await client.triggerEvent('boss-spawn', { bossId: 'dragon', location: 'cave' });
+```
+
+## Related APIs
+
+- [Universe APIs](/api/opencloud/universes) - Restart servers and manage experiences
+- [DataStores](/api/opencloud/datastores) - Persistent data storage
+- [Overview](/api/opencloud/overview) - OpenCloud setup and authentication

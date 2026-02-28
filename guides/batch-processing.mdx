@@ -1,0 +1,332 @@
+---
+title: "Batch processing large requests"
+description: "Automatically split large requests to avoid API limits and rate limiting"
+---
+
+## Overview
+
+Many Roblox APIs have limits on array parameters (e.g., max 100 universe IDs per request). RoZod's `fetchApiSplit` automatically splits large requests into smaller batches.
+
+## Basic usage
+
+Use `fetchApiSplit` to process arrays that exceed API limits:
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+// Will automatically split into batches of 100 universeIds per request
+const data = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, 4, 5, /* ...hundreds more IDs */] },
+  { universeIds: 100 } // Max 100 IDs per request
+);
+
+console.log(data);
+```
+
+<Info>
+  RoZod sends multiple requests in parallel and combines the results into a single array.
+</Info>
+
+## How it works
+
+<Steps>
+  <Step title="Define your large input">
+    Start with an array parameter that might exceed API limits:
+    
+    ```typescript
+    const universeIds = Array.from({ length: 500 }, (_, i) => i + 1);
+    ```
+  </Step>
+  
+  <Step title="Specify the batch size">
+    Tell RoZod the maximum items per request:
+    
+    ```typescript
+    const batchSize = { universeIds: 100 };
+    ```
+  </Step>
+  
+  <Step title="RoZod splits and fetches">
+    RoZod automatically:
+    - Splits your 500 IDs into 5 batches of 100
+    - Sends 5 parallel requests
+    - Combines the results
+    
+    ```typescript
+    const results = await fetchApiSplit(
+      getGamesIcons,
+      { universeIds },
+      batchSize
+    );
+    ```
+  </Step>
+  
+  <Step title="Process the combined results">
+    Results are returned as an array of responses:
+    
+    ```typescript
+    console.log(results); // Array of 5 response objects
+    ```
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's a real-world example fetching icons for many games:
+
+```typescript
+import { fetchApiSplit, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+async function getIconsForManyGames(universeIds: number[]) {
+  const results = await fetchApiSplit(
+    getGamesIcons,
+    { universeIds },
+    { universeIds: 100 } // Roblox limit is 100 per request
+  );
+
+  if (isAnyErrorResponse(results)) {
+    console.error('Failed to fetch icons:', results.message);
+    return [];
+  }
+
+  // Flatten the array of responses into a single array
+  return results.flatMap(response => response.data);
+}
+
+const universeIds = Array.from({ length: 500 }, (_, i) => i + 1);
+const icons = await getIconsForManyGames(universeIds);
+
+console.log(`Fetched ${icons.length} game icons`);
+```
+
+## Transforming results
+
+You can transform each batch's response before combining:
+
+```typescript
+import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const data = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ...many more */] },
+  { universeIds: 100 },
+  // Transform function extracts just the data array
+  (response) => response.data
+);
+
+// data is now an array of data arrays, not full responses
+console.log(data);
+```
+
+<Tip>
+  The transform function is useful for extracting nested data or filtering results.
+</Tip>
+
+## Advanced examples
+
+<Tabs>
+  <Tab title="Multiple parameters">
+    Split on multiple array parameters:
+    
+    ```typescript
+    import { fetchApiSplit } from 'rozod';
+    import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+    const results = await fetchApiSplit(
+      getUsersUserdetails,
+      { 
+        userIds: Array.from({ length: 200 }, (_, i) => i + 1)
+      },
+      { userIds: 50 } // Max 50 users per request
+    );
+
+    console.log(results);
+    ```
+  </Tab>
+  
+  <Tab title="With transformation">
+    Extract specific fields from each batch:
+    
+    ```typescript
+    import { fetchApiSplit } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+    type GameIcon = {
+      targetId: number;
+      imageUrl: string;
+    };
+
+    const icons = await fetchApiSplit(
+      getGamesIcons,
+      { universeIds: [1, 2, 3, /* ...many more */] },
+      { universeIds: 100 },
+      (response): GameIcon[] => 
+        response.data.map(item => ({
+          targetId: item.targetId,
+          imageUrl: item.imageUrl
+        }))
+    );
+
+    // icons is now GameIcon[][]
+    const flatIcons = icons.flat();
+    ```
+  </Tab>
+  
+  <Tab title="With request options">
+    Add authentication and retry logic:
+    
+    ```typescript
+    import { fetchApiSplit } from 'rozod';
+    import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+    const results = await fetchApiSplit(
+      getGamesIcons,
+      { universeIds: [1, 2, 3, /* ...many more */] },
+      { universeIds: 100 },
+      undefined, // No transform
+      {
+        retries: 3,
+        retryDelay: 1000,
+        headers: {
+          'Cookie': '.ROBLOSECURITY=your_cookie'
+        }
+      }
+    );
+    ```
+  </Tab>
+</Tabs>
+
+## Error handling
+
+If any batch fails, the entire operation returns an error:
+
+```typescript
+import { fetchApiSplit, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1, 2, 3, /* ...many more */] },
+  { universeIds: 100 }
+);
+
+if (isAnyErrorResponse(results)) {
+  console.error('Batch processing failed:', results.message);
+  // All batches are aborted on first error
+} else {
+  console.log('All batches completed successfully');
+  console.log(`Received ${results.length} batch responses`);
+}
+```
+
+<Warning>
+  `fetchApiSplit` stops on the first error. If you need to process all batches even when some fail, implement your own batching logic.
+</Warning>
+
+## Performance considerations
+
+### Parallel requests
+
+`fetchApiSplit` sends all batches in parallel using `Promise.all`:
+
+```typescript
+// This sends 10 requests simultaneously
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: Array.from({ length: 1000 }, (_, i) => i) },
+  { universeIds: 100 }
+);
+```
+
+<Info>
+  Parallel requests are fast but may hit rate limits. Consider using sequential processing for large batches.
+</Info>
+
+### Rate limiting
+
+For very large datasets, implement your own batching with delays:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+async function fetchWithDelay(universeIds: number[], batchSize: number) {
+  const results = [];
+  
+  for (let i = 0; i < universeIds.length; i += batchSize) {
+    const batch = universeIds.slice(i, i + batchSize);
+    const response = await fetchApi(getGamesIcons, { universeIds: batch });
+    
+    if (!isAnyErrorResponse(response)) {
+      results.push(response);
+    }
+    
+    // Wait 100ms between batches to avoid rate limiting
+    if (i + batchSize < universeIds.length) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  
+  return results;
+}
+```
+
+## When to use batch processing
+
+<CardGroup cols={2}>
+  <Card title="Use fetchApiSplit when" icon="check">
+    - You have large input arrays
+    - The API has parameter limits
+    - All requests can run in parallel
+    - You want automatic error handling
+  </Card>
+  
+  <Card title="Use manual batching when" icon="wrench">
+    - You need sequential processing
+    - You want custom rate limiting
+    - You need to handle partial failures
+    - You need progress tracking
+  </Card>
+</CardGroup>
+
+## Batch processing vs pagination
+
+Don't confuse batch processing with pagination:
+
+- **Batch processing**: Splits your *input* into smaller chunks
+- **Pagination**: Fetches multiple pages of *output* from the API
+
+```typescript
+// Batch processing: many inputs → many requests
+await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: [1,2,3,...1000] }, // Large input
+  { universeIds: 100 }
+);
+
+// Pagination: one input → many pages of output
+await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 } // Single input, many result pages
+);
+```
+
+<Note>
+  See the [pagination guide](/guides/pagination) for handling multi-page API responses.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Pagination" icon="list" href="/guides/pagination">
+    Learn about handling paginated responses
+  </Card>
+  
+  <Card title="Custom endpoints" icon="puzzle-piece" href="/guides/custom-endpoints">
+    Define your own batch-enabled endpoints
+  </Card>
+</CardGroup>

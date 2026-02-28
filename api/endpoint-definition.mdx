@@ -1,0 +1,447 @@
+---
+title: endpoint
+description: Define custom API endpoints with full type safety using Zod schemas
+---
+
+## Overview
+
+The `endpoint` function allows you to define custom API endpoints with complete type safety. While RoZod includes 750+ pre-defined Roblox endpoints, you can use this function to:
+
+- Define endpoints for undocumented Roblox APIs
+- Create endpoints for your own custom APIs
+- Add type-safe wrappers for third-party APIs
+- Override or extend existing endpoint definitions
+
+Endpoints are defined using [Zod](https://zod.dev) schemas for runtime validation and TypeScript type inference.
+
+## Signature
+
+```typescript
+function endpoint<
+  T extends Record<string, z.Schema<any>>,
+  U extends z.ZodTypeAny,
+  E extends z.ZodTypeAny | undefined = undefined
+>(
+  endpoint: EndpointGeneric<T, U, E>
+): EndpointGeneric<InferNonEmpty<T>, z.infer<U>, E extends z.ZodTypeAny ? z.infer<E> : undefined>
+```
+
+## Parameters
+
+<ParamField path="endpoint" type="EndpointGeneric" required>
+  Configuration object defining the endpoint.
+  
+  <ParamField path="method" type="'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'" required>
+    HTTP method for the endpoint.
+  </ParamField>
+  
+  <ParamField path="path" type="string" required>
+    URL path with optional path parameters using `:paramName` syntax.
+    
+    Example: `/v1/users/:userId/games` or `/v1/games`
+  </ParamField>
+  
+  <ParamField path="baseUrl" type="string" required>
+    Base URL for the API endpoint.
+    
+    Example: `https://games.roblox.com` or `https://api.example.com`
+  </ParamField>
+  
+  <ParamField path="response" type="z.ZodTypeAny" required>
+    Zod schema defining the expected response structure.
+  </ParamField>
+  
+  <ParamField path="parameters" type="Record<string, z.Schema<any>>">
+    Object mapping parameter names to their Zod schemas. Parameters can be:
+    - **Path parameters**: Defined with `:paramName` in the path
+    - **Query parameters**: Any other parameters
+    
+    Use `.optional()` for optional parameters and `.default()` for default values.
+  </ParamField>
+  
+  <ParamField path="body" type="z.ZodTypeAny">
+    Zod schema for the request body. Only applicable for POST, PUT, PATCH methods.
+  </ParamField>
+  
+  <ParamField path="requestFormat" type="'json' | 'text' | 'form-data'" default="json">
+    Format for the request body.
+  </ParamField>
+  
+  <ParamField path="serializationMethod" type="Record<string, { style?: string; explode?: boolean }>">
+    Defines how array parameters are serialized in the URL.
+    
+    Styles:
+    - `form`: Comma-separated (default)
+    - `spaceDelimited`: Space-separated
+    - `pipeDelimited`: Pipe-separated
+    
+    Set `explode: true` to create separate query params for each array element.
+  </ParamField>
+  
+  <ParamField path="errors" type="Array<{ status: number; description?: string }>">
+    Array of possible error responses for documentation purposes.
+  </ParamField>
+  
+  <ParamField path="scopes" type="string[]">
+    OAuth scopes required for OpenCloud endpoints (for documentation).
+  </ParamField>
+</ParamField>
+
+## Return value
+
+Returns an endpoint definition object with inferred TypeScript types that can be used with `fetchApi`, `fetchApiPages`, `fetchApiPagesGenerator`, and `fetchApiSplit`.
+
+## Examples
+
+### Basic GET endpoint
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getUserDetails = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://users.roblox.com',
+  parameters: {
+    userId: z.number().int()
+  },
+  response: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    displayName: z.string(),
+    created: z.string().datetime({ offset: true })
+  })
+});
+
+// Use it with fetchApi
+const user = await fetchApi(getUserDetails, { userId: 123456 });
+```
+
+### POST endpoint with body
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const createPost = endpoint({
+  method: 'POST',
+  path: '/v1/groups/:groupId/wall/posts',
+  baseUrl: 'https://groups.roblox.com',
+  parameters: {
+    groupId: z.number().int()
+  },
+  body: z.object({
+    message: z.string(),
+    captchaToken: z.string().optional()
+  }),
+  response: z.object({
+    id: z.number().int(),
+    message: z.string(),
+    created: z.string().datetime({ offset: true })
+  })
+});
+
+// Use it with fetchApi
+const post = await fetchApi(createPost, {
+  groupId: 11479637,
+  body: {
+    message: 'Hello, world!'
+  }
+});
+```
+
+### Query parameters
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const searchGames = endpoint({
+  method: 'GET',
+  path: '/v1/games/search',
+  baseUrl: 'https://games.roblox.com',
+  parameters: {
+    keyword: z.string(),
+    limit: z.number().int().default(10),
+    sortOrder: z.enum(['Asc', 'Desc']).optional()
+  },
+  response: z.object({
+    data: z.array(z.object({
+      id: z.number().int(),
+      name: z.string()
+    })),
+    nextPageCursor: z.string().nullable()
+  })
+});
+
+// Query parameters are automatically added to URL
+const results = await fetchApi(searchGames, {
+  keyword: 'adventure',
+  limit: 20,
+  sortOrder: 'Desc'
+});
+// Requests: GET https://games.roblox.com/v1/games/search?keyword=adventure&limit=20&sortOrder=Desc
+```
+
+### Array parameters
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getGameIcons = endpoint({
+  method: 'GET',
+  path: '/v1/games/icons',
+  baseUrl: 'https://games.roblox.com',
+  serializationMethod: {
+    universeIds: {
+      style: 'form' // Comma-separated: ?universeIds=1,2,3
+    }
+  },
+  parameters: {
+    universeIds: z.array(z.number().int()),
+    size: z.enum(['256x256', '512x512']).optional()
+  },
+  response: z.object({
+    data: z.array(z.object({
+      targetId: z.number().int(),
+      imageUrl: z.string()
+    }))
+  })
+});
+
+const icons = await fetchApi(getGameIcons, {
+  universeIds: [1, 2, 3],
+  size: '512x512'
+});
+// Requests: GET https://games.roblox.com/v1/games/icons?universeIds=1,2,3&size=512x512
+```
+
+### Exploded array parameters
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getBatchData = endpoint({
+  method: 'GET',
+  path: '/v1/data/batch',
+  baseUrl: 'https://api.example.com',
+  serializationMethod: {
+    ids: {
+      style: 'form',
+      explode: true // Creates separate params: ?ids=1&ids=2&ids=3
+    }
+  },
+  parameters: {
+    ids: z.array(z.number().int())
+  },
+  response: z.object({
+    items: z.array(z.any())
+  })
+});
+
+const data = await fetchApi(getBatchData, { ids: [1, 2, 3] });
+// Requests: GET https://api.example.com/v1/data/batch?ids=1&ids=2&ids=3
+```
+
+### Custom API endpoint
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const myCustomEndpoint = endpoint({
+  method: 'POST',
+  path: '/v1/custom/:customId',
+  baseUrl: 'https://my-api.example.com',
+  parameters: {
+    customId: z.string(),
+    filter: z.string().optional()
+  },
+  body: z.object({
+    action: z.enum(['create', 'update', 'delete']),
+    data: z.record(z.any())
+  }),
+  response: z.object({
+    success: z.boolean(),
+    result: z.any()
+  }),
+  requestFormat: 'json'
+});
+
+const result = await fetchApi(myCustomEndpoint, {
+  customId: 'abc123',
+  filter: 'active',
+  body: {
+    action: 'create',
+    data: { name: 'Example' }
+  }
+});
+```
+
+### Paginated endpoint
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApiPages } from 'rozod';
+
+const listItems = endpoint({
+  method: 'GET',
+  path: '/v1/items',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    limit: z.number().int().default(10),
+    cursor: z.string().optional()
+  },
+  response: z.object({
+    data: z.array(z.object({
+      id: z.number().int(),
+      name: z.string()
+    })),
+    nextPageCursor: z.string().nullable()
+  })
+});
+
+// Works with fetchApiPages automatically
+const allPages = await fetchApiPages(listItems, { limit: 50 });
+```
+
+### With error documentation
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const sensitiveEndpoint = endpoint({
+  method: 'POST',
+  path: '/v1/admin/action',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    actionId: z.number().int()
+  },
+  response: z.object({
+    success: z.boolean()
+  }),
+  errors: [
+    {
+      status: 400,
+      description: 'Invalid action ID'
+    },
+    {
+      status: 401,
+      description: 'Authentication required'
+    },
+    {
+      status: 403,
+      description: 'Insufficient permissions'
+    },
+    {
+      status: 429,
+      description: 'Rate limit exceeded'
+    }
+  ]
+});
+```
+
+### Text response format
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getRawData = endpoint({
+  method: 'GET',
+  path: '/v1/data/raw/:id',
+  baseUrl: 'https://api.example.com',
+  parameters: {
+    id: z.string()
+  },
+  response: z.string(), // Response is plain text
+  requestFormat: 'text'
+});
+
+const rawText = await fetchApi(getRawData, { id: 'example' });
+if (!isAnyErrorResponse(rawText)) {
+  console.log('Raw text:', rawText);
+}
+```
+
+## Type safety
+
+Endpoints defined with the `endpoint` function are fully type-safe:
+
+```typescript
+import { z } from 'zod';
+import { endpoint, fetchApi } from 'rozod';
+
+const getUser = endpoint({
+  method: 'GET',
+  path: '/v1/users/:userId',
+  baseUrl: 'https://users.roblox.com',
+  parameters: {
+    userId: z.number().int(),
+    includeDetails: z.boolean().optional()
+  },
+  response: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    displayName: z.string()
+  })
+});
+
+// ✓ Valid
+const user1 = await fetchApi(getUser, { userId: 123 });
+const user2 = await fetchApi(getUser, { userId: 456, includeDetails: true });
+
+// ✗ TypeScript errors
+const user3 = await fetchApi(getUser, { userId: '123' }); // Error: userId must be number
+const user4 = await fetchApi(getUser, {}); // Error: userId is required
+const user5 = await fetchApi(getUser, { userId: 123, invalid: true }); // Error: unknown parameter
+
+// Response is fully typed
+if (!isAnyErrorResponse(user1)) {
+  user1.id // ✓ number
+  user1.name // ✓ string
+  user1.displayName // ✓ string
+  user1.unknownField // ✗ TypeScript error
+}
+```
+
+## OpenCloud scopes
+
+For OpenCloud endpoints, you can document required OAuth scopes:
+
+```typescript
+import { z } from 'zod';
+import { endpoint } from 'rozod';
+
+const cloudEndpoint = endpoint({
+  method: 'GET',
+  path: '/cloud/v2/universes/:universeId',
+  baseUrl: 'https://apis.roblox.com',
+  parameters: {
+    universe_id: z.string()
+  },
+  response: z.object({
+    id: z.string(),
+    displayName: z.string()
+  }),
+  scopes: ['universe.read']
+});
+```
+
+<Note>
+  Use Zod's `.optional()` for optional parameters and `.default(value)` for parameters with default values. The endpoint function correctly infers which parameters are required.
+</Note>
+
+<Warning>
+  Path parameters (defined with `:paramName` in the path) are automatically extracted and replaced. Don't manually include them in the URL.
+</Warning>
+
+## Related functions
+
+- [fetchApi](/api/fetch-api) - Use endpoints to make requests
+- [fetchApiPages](/api/fetch-api-pages) - Use paginated endpoints
+- [fetchApiSplit](/api/fetch-api-split) - Split large requests

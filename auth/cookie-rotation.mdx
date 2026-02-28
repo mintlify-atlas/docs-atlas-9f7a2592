@@ -1,0 +1,431 @@
+---
+title: Cookie rotation handling
+description: Automatically detect and handle Roblox's cookie rotation for security
+---
+
+Roblox is gradually implementing `.ROBLOSECURITY` cookie rotation for improved security. RoZod automatically detects when cookies are rotated and provides callbacks to persist new values.
+
+## Automatic cookie rotation
+
+RoZod monitors response headers and automatically updates the internal cookie pool when rotation occurs:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // Roblox rotated the cookie - persist the new value
+    await db.updateCookie(poolIndex, newCookie);
+    console.log('Cookie rotated and saved!');
+  }
+});
+```
+
+<Info>
+The internal cookie pool is automatically updated, so the callback is only needed if you want to persist cookies across restarts.
+</Info>
+
+## Cookie refresh callback
+
+The `onCookieRefresh` callback receives detailed information about the rotation:
+
+```typescript
+type CookieRefreshEvent = {
+  /** The old cookie value that was used in the request */
+  oldCookie: string;
+  /** The new cookie value received from Roblox */
+  newCookie: string;
+  /** The index in the cookie pool that was updated */
+  poolIndex: number;
+};
+```
+
+### Example: Database persistence
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: await db.getAllCookies(),
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // Update database
+    await db.updateCookie(poolIndex, newCookie);
+    
+    // Log rotation event
+    await db.logEvent({
+      type: 'cookie_rotation',
+      accountIndex: poolIndex,
+      timestamp: new Date(),
+    });
+    
+    console.log(`Cookie ${poolIndex} rotated successfully`);
+  }
+});
+```
+
+### Example: Environment variable update
+
+```typescript
+import fs from 'fs';
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ newCookie, poolIndex }) => {
+    // Update .env file (for development only)
+    const envContent = fs.readFileSync('.env', 'utf8');
+    const updated = envContent.replace(
+      /ROBLOX_COOKIE=.*/,
+      `ROBLOX_COOKIE=${newCookie}`
+    );
+    fs.writeFileSync('.env', updated);
+    
+    console.log('Cookie updated in .env file');
+  }
+});
+```
+
+<Warning>
+Automatically updating `.env` files is only suitable for development. In production, use proper secret management.
+</Warning>
+
+## Cookie pool rotation
+
+When using multiple cookies, each cookie is tracked independently:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: [
+    await db.getCookie(0),
+    await db.getCookie(1),
+    await db.getCookie(2),
+  ],
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // poolIndex indicates which cookie was rotated
+    await db.updateCookie(poolIndex, newCookie);
+    console.log(`Account ${poolIndex} cookie rotated`);
+  }
+});
+```
+
+<Info>
+The `poolIndex` allows you to track which specific account in your pool had its cookie rotated.
+</Info>
+
+## Manual cookie refresh
+
+Proactively refresh cookies before they expire:
+
+```typescript
+import { refreshCookie } from 'rozod';
+
+// Refresh a specific cookie
+const result = await refreshCookie(0); // Index 0 = first cookie
+
+if (result.success) {
+  console.log('New cookie:', result.newCookie);
+  await db.updateCookie(result.poolIndex, result.newCookie);
+} else {
+  console.error('Refresh failed:', result.error);
+}
+```
+
+### Refresh all cookies in a pool
+
+```typescript
+import { refreshCookie, getCookies } from 'rozod';
+
+async function refreshAllCookies() {
+  const cookies = getCookies();
+  const results = [];
+  
+  for (let i = 0; i < cookies.length; i++) {
+    const result = await refreshCookie(i);
+    results.push(result);
+    
+    if (result.success) {
+      await db.updateCookie(i, result.newCookie);
+      console.log(`Cookie ${i} refreshed successfully`);
+    } else {
+      console.error(`Cookie ${i} refresh failed:`, result.error);
+    }
+  }
+  
+  return results;
+}
+
+// Run on a schedule
+setInterval(refreshAllCookies, 24 * 60 * 60 * 1000); // Daily
+```
+
+<Note>
+Manual refresh is useful for proactive cookie management, but RoZod handles automatic rotation without manual intervention.
+</Note>
+
+## Refresh result type
+
+The `refreshCookie()` function returns detailed results:
+
+```typescript
+type RefreshCookieResult = {
+  success: boolean;
+  /** The new cookie value if refresh was successful */
+  newCookie?: string;
+  /** Error message if refresh failed */
+  error?: string;
+  /** The index in the cookie pool that was refreshed */
+  poolIndex: number;
+};
+```
+
+## Cookie utilities
+
+### Get current cookies
+
+Retrieve all cookies from the pool:
+
+```typescript
+import { getCookies } from 'rozod';
+
+const cookies = getCookies();
+console.log(`Pool has ${cookies.length} cookies`);
+
+// Check cookie health
+for (let i = 0; i < cookies.length; i++) {
+  const isValid = await validateCookie(cookies[i]);
+  console.log(`Cookie ${i}: ${isValid ? 'valid' : 'invalid'}`);
+}
+```
+
+### Update specific cookie
+
+Manually update a cookie in the pool:
+
+```typescript
+import { updateCookie } from 'rozod';
+
+// Update the first cookie
+const success = updateCookie(0, newCookieValue);
+
+if (success) {
+  console.log('Cookie updated in pool');
+} else {
+  console.error('Invalid index or cookie');
+}
+```
+
+<Warning>
+Manually updating cookies bypasses the `onCookieRefresh` callback. Only use this for manual management scenarios.
+</Warning>
+
+## How rotation detection works
+
+RoZod monitors response headers for cookie rotation:
+
+```typescript
+// Internal RoZod logic (for reference)
+async function handleCookieRotation(response: Response, usedCookie?: CookieSelection): Promise<void> {
+  // Check for Set-Cookie header with new .ROBLOSECURITY
+  const setCookieHeader = response.headers.get('set-cookie');
+  if (!setCookieHeader) return;
+  
+  const newCookie = extractRoblosecurityFromSetCookie(setCookieHeader);
+  if (!newCookie || newCookie === usedCookie.cookie) return;
+  
+  // Update pool and invoke callback
+  updateCookieInPool(usedCookie.cookie, newCookie, usedCookie.index);
+  await invokeRefreshCallback(usedCookie.cookie, newCookie, usedCookie.index);
+}
+```
+
+RoZod checks every response for `Set-Cookie` headers containing `.ROBLOSECURITY` and compares against the cookie used for the request.
+
+<Info>
+Rotation detection is thread-safe and works correctly with concurrent requests using cookie pools.
+</Info>
+
+## Concurrent request handling
+
+RoZod tracks which cookie was used for each request:
+
+```typescript
+// Multiple concurrent requests
+const [result1, result2, result3] = await Promise.all([
+  fetchApi(endpoint1, params1), // Uses cookie at index 0
+  fetchApi(endpoint2, params2), // Uses cookie at index 1
+  fetchApi(endpoint3, params3), // Uses cookie at index 2
+]);
+
+// If any cookie is rotated, only that specific cookie is updated
+```
+
+<Check>
+Each request remembers which cookie it used, ensuring correct rotation even with concurrent requests.
+</Check>
+
+## Error handling
+
+Handle errors in the refresh callback:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    try {
+      await db.updateCookie(poolIndex, newCookie);
+      console.log('Cookie persisted successfully');
+    } catch (error) {
+      // Log error but don't throw - would break request flow
+      console.error('Failed to persist cookie:', error);
+      
+      // Send alert
+      await sendAlert({
+        type: 'cookie_rotation_persistence_failed',
+        poolIndex,
+        error: error.message,
+      });
+    }
+  }
+});
+```
+
+<Warning>
+Errors in `onCookieRefresh` are caught and logged to prevent breaking the request flow. Ensure your callback handles errors gracefully.
+</Warning>
+
+## Rotation frequency
+
+Roblox cookie rotation behavior:
+
+- **Gradual rollout**: Not all accounts have rotation enabled
+- **Frequency varies**: Some accounts rotate daily, others weekly or monthly
+- **Triggered by events**: May occur after security events or location changes
+- **Not predictable**: Rotation timing cannot be determined in advance
+
+<Info>
+Implement `onCookieRefresh` callbacks even if you don't see rotations immediately. Roblox is gradually enabling this feature.
+</Info>
+
+## Best practices
+
+<AccordionGroup>
+  <Accordion title="Always implement onCookieRefresh">
+    Even if your account doesn't rotate cookies yet, implement the callback. Roblox is gradually enabling rotation.
+  </Accordion>
+  
+  <Accordion title="Persist cookies to durable storage">
+    Store cookies in a database, file system, or secret manager. Don't rely on in-memory storage across restarts.
+  </Accordion>
+  
+  <Accordion title="Handle callback errors gracefully">
+    Don't throw errors from `onCookieRefresh`. Log them and alert, but let the request flow continue.
+  </Accordion>
+  
+  <Accordion title="Validate cookies after rotation">
+    After receiving a new cookie, make a test request to verify it works before relying on it.
+  </Accordion>
+  
+  <Accordion title="Monitor rotation events">
+    Track rotation frequency to detect anomalies or security issues with your accounts.
+  </Accordion>
+  
+  <Accordion title="Use manual refresh proactively">
+    Periodically refresh cookies to ensure they're fresh and avoid expiration-related issues.
+  </Accordion>
+</AccordionGroup>
+
+## Testing rotation handling
+
+Test your rotation callback:
+
+```typescript
+import { configureServer, refreshCookie } from 'rozod';
+
+let rotationCount = 0;
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    rotationCount++;
+    console.log(`Rotation ${rotationCount}:`, {
+      poolIndex,
+      oldCookieLength: oldCookie.length,
+      newCookieLength: newCookie.length,
+    });
+    
+    // Your persistence logic
+    await db.updateCookie(poolIndex, newCookie);
+  }
+});
+
+// Trigger manual refresh to test callback
+const result = await refreshCookie(0);
+if (result.success) {
+  console.log('Callback triggered with new cookie');
+}
+```
+
+## Migration guide
+
+If you're currently managing cookies manually:
+
+### Before (manual management)
+
+```typescript
+// Old approach - manually tracking cookies
+let currentCookie = process.env.ROBLOX_COOKIE;
+
+const result = await fetchApi(endpoint, params, {
+  headers: {
+    'Cookie': `.ROBLOSECURITY=${currentCookie}`
+  }
+});
+
+// Manual rotation detection (error-prone)
+const newCookie = result.headers.get('set-cookie');
+if (newCookie) {
+  currentCookie = extractCookie(newCookie);
+  // Manually persist
+}
+```
+
+### After (automatic with RoZod)
+
+```typescript
+// New approach - automatic rotation handling
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ newCookie, poolIndex }) => {
+    await db.updateCookie(poolIndex, newCookie);
+  }
+});
+
+// Just make requests - rotation is automatic
+const result = await fetchApi(endpoint, params);
+```
+
+<Check>
+RoZod's automatic rotation is more reliable and handles edge cases like concurrent requests and cookie pools.
+</Check>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Cookie pools" icon="layer-group" href="/auth/cookie-pools">
+    Use multiple accounts with rotation
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand all security mechanisms
+  </Card>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Configure server-side authentication
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle cookie-related errors
+  </Card>
+</CardGroup>

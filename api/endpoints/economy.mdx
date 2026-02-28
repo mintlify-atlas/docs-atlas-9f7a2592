@@ -1,0 +1,185 @@
+---
+title: "Economy API"
+description: "Access Robux balance and currency information"
+---
+
+The Economy API provides endpoints for accessing user currency information (Robux balance).
+
+## Importing endpoints
+
+Import the economy endpoint:
+
+```typescript
+import { getUserCurrency } from 'rozod/endpoints/economyv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get user currency
+
+Retrieve the Robux balance for the authenticated user.
+
+```typescript
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (!isAnyErrorResponse(currency)) {
+  console.log(`Robux balance: ${currency.robux}`);
+}
+```
+
+<Note>
+This endpoint requires authentication. The currency can only be retrieved for the currently authenticated user.
+</Note>
+
+## Server-side usage
+
+When using RoZod in a Node.js environment, configure authentication first:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { getUserCurrency } from 'rozod/endpoints/economyv1';
+
+// Configure authentication
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+});
+
+// Fetch currency
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (!isAnyErrorResponse(currency)) {
+  console.log(`Current balance: ${currency.robux} Robux`);
+}
+```
+
+## Common patterns
+
+### Check if user has enough Robux
+
+```typescript
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (!isAnyErrorResponse(currency)) {
+  const requiredRobux = 100;
+  
+  if (currency.robux >= requiredRobux) {
+    console.log('User has enough Robux');
+  } else {
+    console.log(`Need ${requiredRobux - currency.robux} more Robux`);
+  }
+}
+```
+
+### Monitor balance changes
+
+```typescript
+async function checkBalance() {
+  const currency = await fetchApi(getUserCurrency, undefined);
+  
+  if (!isAnyErrorResponse(currency)) {
+    const previousBalance = parseInt(localStorage.getItem('lastBalance') || '0');
+    const currentBalance = currency.robux;
+    
+    if (currentBalance !== previousBalance) {
+      const difference = currentBalance - previousBalance;
+      console.log(`Balance changed by ${difference > 0 ? '+' : ''}${difference} Robux`);
+      localStorage.setItem('lastBalance', currentBalance.toString());
+    }
+  }
+}
+
+// Check every 60 seconds
+setInterval(checkBalance, 60000);
+```
+
+### Handle authentication errors
+
+```typescript
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (isAnyErrorResponse(currency)) {
+  if (currency.message.includes('Authorization has been denied')) {
+    console.error('Not authenticated. Please log in.');
+  } else {
+    console.error('Error fetching currency:', currency.message);
+  }
+} else {
+  console.log(`Balance: ${currency.robux} Robux`);
+}
+```
+
+### Format Robux display
+
+```typescript
+function formatRobux(amount: number): string {
+  return amount.toLocaleString('en-US');
+}
+
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (!isAnyErrorResponse(currency)) {
+  console.log(`You have R$ ${formatRobux(currency.robux)}`);
+  // Output: "You have R$ 1,234,567"
+}
+```
+
+## Error handling
+
+The Economy API can return the following errors:
+
+- **401 Unauthorized**: User is not authenticated
+- **403 Forbidden**: User is invalid
+
+Always check for error responses:
+
+```typescript
+const currency = await fetchApi(getUserCurrency, undefined);
+
+if (isAnyErrorResponse(currency)) {
+  console.error('Failed to fetch currency:', currency.message);
+  return;
+}
+
+// Safe to use currency.robux here
+console.log(currency.robux);
+```
+
+<Tip>
+Use the `throwOnError` option to automatically throw errors instead of returning them:
+
+```typescript
+const currency = await fetchApi(
+  getUserCurrency,
+  undefined,
+  { throwOnError: true }
+);
+
+// TypeScript knows currency is not an error here
+console.log(currency.robux);
+```
+</Tip>
+
+## Response type
+
+The `getUserCurrency` endpoint returns:
+
+```typescript
+type CurrencyResponse = {
+  robux: number; // The user's Robux balance
+};
+```
+
+## Related endpoints
+
+For more economy-related functionality, see:
+
+- **Economy Creator Stats API** (`economycreatorstatsv1`) - View creator earnings
+- **Trades API** (`tradesv1`, `tradesv2`) - Trade items with other users
+- **Inventory API** (`inventoryv1`, `inventoryv2`) - Manage owned items
+
+## Available endpoints
+
+The Economy v1 API currently provides one endpoint:
+
+- `getUserCurrency` - Get authenticated user's Robux balance
+
+For additional functionality, refer to related APIs like Economy Creator Stats, Trades, and Inventory.

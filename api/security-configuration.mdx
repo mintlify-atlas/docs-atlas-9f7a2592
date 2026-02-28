@@ -1,0 +1,276 @@
+---
+title: 'Security configuration'
+description: 'Configure advanced security features including challenge handling and hardware-backed authentication'
+---
+
+## setHandleGenericChallenge
+
+Allows you to set the function that will be used to handle Roblox generic challenges, such as captchas and two-step verification.
+
+When Roblox returns a challenge header in a response, RoZod will automatically invoke your handler function. Your handler should solve the challenge and return the solution, or return `undefined` to skip the challenge.
+
+```typescript
+function setHandleGenericChallenge(
+  fn: (challenge: ParsedChallenge) => Promise<ParsedChallenge | undefined> | ParsedChallenge | undefined
+): void
+```
+
+### Parameters
+
+<ParamField path="fn" type="ChallengeHandler" required>
+  The function to use for handling challenges.
+
+  <Expandable title="Function signature">
+    <ParamField path="challenge" type="ParsedChallenge">
+      The challenge object received from Roblox.
+
+      <Expandable title="ParsedChallenge properties">
+        <ParamField path="challengeType" type="string">
+          The type of challenge (e.g., `'captcha'`, `'reauthentication'`, `'twostepverification'`).
+        </ParamField>
+
+        <ParamField path="challengeId" type="string">
+          Unique identifier for this challenge instance.
+        </ParamField>
+
+        <ParamField path="challengeBase64Metadata" type="string">
+          Base64-encoded challenge metadata.
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="returns" type="Promise<ParsedChallenge | undefined> | ParsedChallenge | undefined">
+      Return a `ParsedChallenge` object with the solution, or `undefined` to skip the challenge.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```typescript Basic captcha handler
+import { setHandleGenericChallenge } from 'rozod';
+import type { ParsedChallenge } from 'parse-roblox-errors';
+
+setHandleGenericChallenge(async (challenge: ParsedChallenge) => {
+  if (challenge.challengeType === 'captcha') {
+    // Solve the captcha using your preferred service
+    const solution = await solveCaptcha(challenge.challengeId);
+    
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution,
+    };
+  }
+  
+  // Skip other challenge types
+  return undefined;
+});
+```
+
+```typescript Multiple challenge types
+import { setHandleGenericChallenge } from 'rozod';
+import type { ParsedChallenge } from 'parse-roblox-errors';
+
+setHandleGenericChallenge(async (challenge: ParsedChallenge) => {
+  switch (challenge.challengeType) {
+    case 'captcha':
+      const captchaSolution = await solveCaptcha(challenge);
+      return {
+        challengeType: challenge.challengeType,
+        challengeId: challenge.challengeId,
+        challengeBase64Metadata: captchaSolution,
+      };
+    
+    case 'twostepverification':
+      const code = await get2FACode();
+      return {
+        challengeType: challenge.challengeType,
+        challengeId: challenge.challengeId,
+        challengeBase64Metadata: btoa(code),
+      };
+    
+    case 'reauthentication':
+      console.log('Reauthentication required');
+      return undefined; // Skip reauthentication
+    
+    default:
+      console.log('Unknown challenge type:', challenge.challengeType);
+      return undefined;
+  }
+});
+```
+
+```typescript With external captcha service
+import { setHandleGenericChallenge } from 'rozod';
+import { CaptchaSolver } from 'captcha-solver-library';
+import type { ParsedChallenge } from 'parse-roblox-errors';
+
+const solver = new CaptchaSolver({ apiKey: process.env.CAPTCHA_API_KEY });
+
+setHandleGenericChallenge(async (challenge: ParsedChallenge) => {
+  if (challenge.challengeType === 'captcha') {
+    try {
+      const solution = await solver.solve({
+        siteKey: challenge.challengeId,
+        metadata: challenge.challengeBase64Metadata,
+      });
+      
+      return {
+        challengeType: challenge.challengeType,
+        challengeId: challenge.challengeId,
+        challengeBase64Metadata: solution.token,
+      };
+    } catch (error) {
+      console.error('Failed to solve captcha:', error);
+      return undefined;
+    }
+  }
+  
+  return undefined;
+});
+```
+
+```typescript With retry logic
+import { setHandleGenericChallenge } from 'rozod';
+import type { ParsedChallenge } from 'parse-roblox-errors';
+
+let challengeAttempts = 0;
+const MAX_ATTEMPTS = 3;
+
+setHandleGenericChallenge(async (challenge: ParsedChallenge) => {
+  if (challengeAttempts >= MAX_ATTEMPTS) {
+    console.error('Max challenge attempts reached');
+    challengeAttempts = 0;
+    return undefined;
+  }
+  
+  challengeAttempts++;
+  
+  if (challenge.challengeType === 'captcha') {
+    const solution = await solveCaptcha(challenge.challengeId);
+    return {
+      challengeType: challenge.challengeType,
+      challengeId: challenge.challengeId,
+      challengeBase64Metadata: solution,
+    };
+  }
+  
+  return undefined;
+});
+```
+</CodeGroup>
+
+<Note>
+  RoZod automatically retries requests up to 3 times when challenges are returned. Your handler will be invoked for each retry until the challenge is solved or the retry limit is reached.
+</Note>
+
+<Warning>
+  Make sure your challenge handler doesn't throw errors. If it does, RoZod will catch and log them, but the request will fail. Always return `undefined` if you can't handle a challenge type.
+</Warning>
+
+---
+
+## changeHBAKeys
+
+Allows you to change the crypto key pair used by the internal hardware-backed authentication (HBA) signatures. This should only be used in a Node.js context.
+
+Roblox's HBA system requires cryptographic signatures for certain authenticated requests. RoZod generates these automatically, but you can provide your own key pair if needed for advanced use cases.
+
+```typescript
+function changeHBAKeys(keys?: CryptoKeyPair): void
+```
+
+### Parameters
+
+<ParamField path="keys" type="CryptoKeyPair">
+  The crypto key pair to use for HBA signatures. Pass `undefined` to reset to automatic key generation.
+</ParamField>
+
+### Example
+
+<CodeGroup>
+```typescript Generate custom keys
+import { changeHBAKeys } from 'rozod';
+
+// Generate a custom ECDSA key pair
+const keyPair = await crypto.subtle.generateKey(
+  {
+    name: 'ECDSA',
+    namedCurve: 'P-256',
+  },
+  true,
+  ['sign', 'verify']
+);
+
+// Use the custom key pair for HBA signatures
+changeHBAKeys(keyPair);
+```
+
+```typescript Reset to automatic keys
+import { changeHBAKeys } from 'rozod';
+
+// Reset to automatic key generation
+changeHBAKeys(undefined);
+```
+
+```typescript Load persisted keys
+import { changeHBAKeys } from 'rozod';
+
+// Load a previously generated and persisted key pair
+const privateKeyData = await db.getPrivateKey();
+const publicKeyData = await db.getPublicKey();
+
+const privateKey = await crypto.subtle.importKey(
+  'jwk',
+  privateKeyData,
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['sign']
+);
+
+const publicKey = await crypto.subtle.importKey(
+  'jwk',
+  publicKeyData,
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['verify']
+);
+
+changeHBAKeys({ privateKey, publicKey });
+```
+</CodeGroup>
+
+<Warning>
+  This is an advanced feature. Most users don't need to call this function - RoZod handles HBA signatures automatically. Only use custom keys if you have a specific requirement, such as persisting keys across application restarts for consistency.
+</Warning>
+
+<Note>
+  Hardware-backed authentication (HBA) is a security feature implemented by Roblox to verify that requests come from legitimate clients. RoZod automatically generates the required cryptographic signatures using the Web Crypto API.
+</Note>
+
+## Types
+
+### ParsedChallenge
+
+```typescript
+type ParsedChallenge = {
+  challengeType: string;
+  challengeId: string;
+  challengeBase64Metadata: string;
+}
+```
+
+Represents a Roblox authentication challenge that needs to be solved.
+
+### CryptoKeyPair
+
+```typescript
+interface CryptoKeyPair {
+  privateKey: CryptoKey;
+  publicKey: CryptoKey;
+}
+```
+
+Standard Web Crypto API key pair interface for ECDSA P-256 keys.

@@ -1,0 +1,112 @@
+---
+title: Introduction
+description: Type-safe Roblox API and OpenCloud client for TypeScript
+---
+
+<img
+  className="block dark:hidden"
+  src="https://github.com/alexop1000/RoZod/assets/46445843/1c2a6cb5-b1d6-4784-b084-0679d81109c3"
+  alt="RoZod Logo"
+  width="400"
+/>
+<img
+  className="hidden dark:block"
+  src="https://github.com/alexop1000/RoZod/assets/46445843/1c2a6cb5-b1d6-4784-b084-0679d81109c3"
+  alt="RoZod Logo"
+  width="400"
+/>
+
+# Welcome to RoZod
+
+RoZod makes working with Roblox APIs simple and type-safe in TypeScript. With **650+ classic Roblox web API endpoints** and **95+ OpenCloud endpoints** (all code-generated from official Roblox documentation), you get comprehensive coverage of virtually every available Roblox API with full type safety.
+
+Perfect for everything from small one-time NodeJS/Bun/Deno scripts to large-scale production applications. RoZod powers [RoGold](https://rogold.live), a browser extension with **800,000+ active users**, handling millions of API requests daily across both frontend extensions and backend workflows.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Type safety" icon="shield-check">
+    Complete TypeScript type safety for all 750+ endpoints with requests and responses validated at compile time
+  </Card>
+  <Card title="Production ready" icon="rocket">
+    Battle-tested in applications serving 800,000+ users with millions of daily API requests
+  </Card>
+  <Card title="Universal runtime" icon="globe">
+    Works seamlessly in NodeJS, Bun, Deno, and browsers with zero configuration changes
+  </Card>
+  <Card title="Simple interface" icon="sparkles">
+    Easy to understand API with minimal boilerplate - get started in minutes
+  </Card>
+  <Card title="Pagination helpers" icon="arrows-rotate">
+    Built-in tools for handling paginated responses with automatic page fetching
+  </Card>
+  <Card title="Batch processing" icon="layer-group">
+    Automatically split large requests to avoid API limits without manual splitting
+  </Card>
+  <Card title="Smart error handling" icon="triangle-exclamation">
+    Choose between safe type unions or throw-on-error based on your preference
+  </Card>
+  <Card title="Custom endpoints" icon="puzzle-piece">
+    Define your own endpoints with full type safety using Zod schemas
+  </Card>
+</CardGroup>
+
+## What's included
+
+RoZod provides comprehensive coverage of the Roblox API ecosystem:
+
+- **650+ classic web API endpoints** - Complete coverage of traditional `*.roblox.com` APIs
+- **95+ OpenCloud endpoints** - Modern `apis.roblox.com/cloud` APIs with API key authentication
+- **Automatic authentication** - Cookie management, CSRF tokens, HBA signatures, and challenge handling
+- **Type-safe schemas** - All endpoints generated from official Roblox documentation with Zod validation
+- **Advanced features** - Pagination, batching, cookie pools, user agent rotation, and more
+
+## Quick example
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Fetch user details with full type safety
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [1, 123456] });
+if (isAnyErrorResponse(userInfo)) {
+  return;
+}
+console.log(userInfo.data[0].displayName); // Properly typed!
+```
+
+<Info>
+  RoZod automatically handles Roblox's authentication requirements including CSRF tokens, hardware-backed authentication, and cookie rotation.
+</Info>
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install RoZod with npm, yarn, pnpm, or bun
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Get a working example running in minutes
+  </Card>
+  <Card title="API reference" icon="book" href="/api/fetch-api">
+    Explore the core API functions
+  </Card>
+  <Card title="Authentication" icon="key" href="/auth/overview">
+    Learn about cookie management and OpenCloud keys
+  </Card>
+</CardGroup>
+
+## Use cases
+
+RoZod is perfect for:
+
+- **Automation scripts** - Automate repetitive Roblox tasks with type-safe APIs
+- **Monitoring tools** - Track game statistics, player activity, and group events
+- **Browser extensions** - Build powerful Roblox extensions like RoGold
+- **Backend services** - Create scalable services that interact with Roblox
+- **Data analysis** - Collect and analyze Roblox data with confidence
+- **Bot development** - Build sophisticated Roblox bots with full type safety
+
+<Tip>
+  RoZod works in both browser and server environments without any configuration changes. Write once, run anywhere.
+</Tip>

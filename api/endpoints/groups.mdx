@@ -1,0 +1,377 @@
+---
+title: "Groups API"
+description: "Manage groups, members, roles, and permissions"
+---
+
+The Groups API provides comprehensive functionality for group management, including member operations, role management, wall posts, and configuration.
+
+## Importing endpoints
+
+Import the endpoints you need from the groups module:
+
+```typescript
+import { getGroupsGroupid, getGroupsGroupidMembers, postGroupsGroupidUsers } from 'rozod/endpoints/groupsv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get group information
+
+Fetch basic information about a group.
+
+```typescript
+const group = await fetchApi(getGroupsGroupid, {
+  groupId: 1234567,
+});
+
+if (!isAnyErrorResponse(group)) {
+  console.log(`${group.name} - ${group.description}`);
+  console.log(`Owner: ${group.owner.username}`);
+  console.log(`Members: ${group.memberCount}`);
+  
+  if (group.shout) {
+    console.log(`Shout: ${group.shout.body}`);
+  }
+}
+```
+
+## Get group members
+
+Retrieve members of a group with pagination.
+
+```typescript
+import { getGroupsGroupidUsersWithRole } from 'rozod/endpoints/groupsv1';
+
+const members = await fetchApi(getGroupsGroupidUsersWithRole, {
+  groupId: 1234567,
+  roleSetId: 12345678, // Optional: filter by role
+  limit: 100,
+});
+
+if (!isAnyErrorResponse(members)) {
+  members.data.forEach((member) => {
+    console.log(`${member.user.displayName} - ${member.role.name}`);
+  });
+}
+```
+
+<Tip>
+Use `fetchApiPages` to automatically fetch all members across multiple pages.
+</Tip>
+
+## Get group roles
+
+Fetch all roles in a group.
+
+```typescript
+import { getGroupsGroupidRoles } from 'rozod/endpoints/groupsv1';
+
+const roles = await fetchApi(getGroupsGroupidRoles, {
+  groupId: 1234567,
+});
+
+if (!isAnyErrorResponse(roles)) {
+  roles.roles.forEach((role) => {
+    console.log(`${role.name} (Rank ${role.rank})`);
+    console.log(`Members: ${role.memberCount}`);
+  });
+}
+```
+
+## Manage group membership
+
+### Join a group
+
+```typescript
+import { postGroupsGroupidUsers } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(postGroupsGroupidUsers, {
+  groupId: 1234567,
+  body: {
+    sessionId: 'optional-session-id',
+    redemptionToken: 'optional-token',
+    captchaId: '',
+    captchaToken: '',
+    captchaProvider: '',
+    challengeId: '',
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Successfully joined group');
+}
+```
+
+### Leave a group
+
+```typescript
+import { deleteGroupsGroupidUsers } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(deleteGroupsGroupidUsers, {
+  groupId: 1234567,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Left group successfully');
+}
+```
+
+## Join requests
+
+### Get join requests
+
+```typescript
+import { getGroupsGroupidJoinRequests } from 'rozod/endpoints/groupsv1';
+
+const requests = await fetchApi(getGroupsGroupidJoinRequests, {
+  groupId: 1234567,
+  limit: 50,
+});
+
+if (!isAnyErrorResponse(requests)) {
+  requests.data.forEach((request) => {
+    console.log(`${request.requester.displayName} requested to join`);
+  });
+}
+```
+
+### Accept join request
+
+```typescript
+import { postGroupsGroupidJoinRequestsUsersUserid } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(postGroupsGroupidJoinRequestsUsersUserid, {
+  groupId: 1234567,
+  userId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Join request accepted');
+}
+```
+
+### Decline join request
+
+```typescript
+import { deleteGroupsGroupidJoinRequestsUsersUserid } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(deleteGroupsGroupidJoinRequestsUsersUserid, {
+  groupId: 1234567,
+  userId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Join request declined');
+}
+```
+
+<Note>
+Managing join requests requires appropriate group permissions.
+</Note>
+
+## Group wall
+
+### Get wall posts
+
+```typescript
+import { getGroupsGroupidWall } from 'rozod/endpoints/groupsv1';
+
+const wall = await fetchApi(getGroupsGroupidWall, {
+  groupId: 1234567,
+  limit: 25,
+  sortOrder: 'Desc',
+});
+
+if (!isAnyErrorResponse(wall)) {
+  wall.data.forEach((post) => {
+    console.log(`${post.poster.displayName}: ${post.body}`);
+    console.log(`Posted: ${post.created}`);
+  });
+}
+```
+
+### Post to wall
+
+```typescript
+import { postGroupsGroupidWall } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(postGroupsGroupidWall, {
+  groupId: 1234567,
+  body: {
+    body: 'Hello from the API!',
+    captchaId: '',
+    captchaToken: '',
+    captchaProvider: '',
+    challengeId: '',
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Posted to wall successfully');
+}
+```
+
+### Delete wall post
+
+```typescript
+import { deleteGroupsGroupidWallPostsPostid } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(deleteGroupsGroupidWallPostsPostid, {
+  groupId: 1234567,
+  postId: 123456789,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Wall post deleted');
+}
+```
+
+## Group settings
+
+### Get group settings
+
+```typescript
+import { getGroupsGroupidSettings } from 'rozod/endpoints/groupsv1';
+
+const settings = await fetchApi(getGroupsGroupidSettings, {
+  groupId: 1234567,
+});
+
+if (!isAnyErrorResponse(settings)) {
+  console.log(`Approval required: ${settings.isApprovalRequired}`);
+  console.log(`Public funds: ${settings.areGroupFundsVisible}`);
+}
+```
+
+### Update group settings
+
+```typescript
+import { patchGroupsGroupidSettings } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(patchGroupsGroupidSettings, {
+  groupId: 1234567,
+  body: {
+    isApprovalRequired: true,
+    areEnemiesAllowed: false,
+    areGroupFundsVisible: true,
+    areGroupGamesVisible: true,
+    verificationLevel: 0,
+    accountTenureRequirement: 0,
+    slowmode: 0,
+    isMemberListVisibleToPublic: true,
+  },
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Settings updated');
+}
+```
+
+## Search groups
+
+Search for groups by keyword.
+
+```typescript
+import { getGroupsSearch } from 'rozod/endpoints/groupsv1';
+
+const results = await fetchApi(getGroupsSearch, {
+  keyword: 'development',
+  limit: 25,
+});
+
+if (!isAnyErrorResponse(results)) {
+  results.data.forEach((group) => {
+    console.log(`${group.name} - ${group.memberCount} members`);
+    console.log(`Verified: ${group.hasVerifiedBadge}`);
+  });
+}
+```
+
+## Audit logs
+
+View group action history (requires permissions).
+
+```typescript
+import { getGroupsGroupidAuditLog } from 'rozod/endpoints/groupsv1';
+
+const logs = await fetchApi(getGroupsGroupidAuditLog, {
+  groupId: 1234567,
+  actionType: 'ChangeRank', // Optional filter
+  limit: 50,
+});
+
+if (!isAnyErrorResponse(logs)) {
+  logs.data.forEach((log) => {
+    console.log(`${log.actor.user.displayName} performed ${log.actionType}`);
+    console.log(`Time: ${log.created}`);
+  });
+}
+```
+
+## Ban management
+
+### Get banned users
+
+```typescript
+import { getGroupsGroupidBans } from 'rozod/endpoints/groupsv1';
+
+const bans = await fetchApi(getGroupsGroupidBans, {
+  groupId: 1234567,
+  limit: 50,
+});
+
+if (!isAnyErrorResponse(bans)) {
+  bans.data.forEach((ban) => {
+    console.log(`Banned: ${ban.user.displayName}`);
+    console.log(`By: ${ban.actingUser.user.displayName}`);
+  });
+}
+```
+
+### Ban a user
+
+```typescript
+import { postGroupsGroupidBansUserid } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(postGroupsGroupidBansUserid, {
+  groupId: 1234567,
+  userId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('User banned from group');
+}
+```
+
+### Unban a user
+
+```typescript
+import { deleteGroupsGroupidBansUserid } from 'rozod/endpoints/groupsv1';
+
+const result = await fetchApi(deleteGroupsGroupidBansUserid, {
+  groupId: 1234567,
+  userId: 987654321,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('User unbanned');
+}
+```
+
+## Available endpoints
+
+All endpoints are exported from `rozod/endpoints/groupsv1`:
+
+- `getGroupsGroupid` - Get group info
+- `getGroupsGroupidRoles` - Get roles
+- `getGroupsGroupidMembers` - Get members (deprecated, use `getGroupsGroupidUsersWithRole`)
+- `getGroupsGroupidJoinRequests` - Get join requests
+- `getGroupsGroupidWall` - Get wall posts
+- `postGroupsGroupidWall` - Post to wall
+- `getGroupsGroupidSettings` - Get settings
+- `patchGroupsGroupidSettings` - Update settings
+- `getGroupsGroupidAuditLog` - Get audit logs
+- `getGroupsGroupidBans` - Get banned users
+- `getGroupsSearch` - Search groups
+- And more...
+
+For the complete list, refer to the TypeScript types in your IDE.

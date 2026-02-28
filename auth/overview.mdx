@@ -1,0 +1,124 @@
+---
+title: Authentication overview
+description: Learn how RoZod handles Roblox authentication automatically with comprehensive security features
+---
+
+RoZod provides automatic authentication handling for both browser and server environments, with support for multiple Roblox accounts, cookie rotation, and advanced security features.
+
+## Key features
+
+RoZod automatically handles all authentication complexity:
+
+<CardGroup cols={2}>
+  <Card title="Automatic cookie management" icon="cookie">
+    Cookies are automatically sent in browsers and easily configured for servers
+  </Card>
+  <Card title="Cookie pooling" icon="layer-group">
+    Use multiple Roblox accounts for load distribution and failover
+  </Card>
+  <Card title="Security features" icon="shield">
+    Built-in XCSRF token management, HBA signatures, and challenge handling
+  </Card>
+  <Card title="Cookie rotation" icon="arrows-rotate">
+    Automatic detection and handling of Roblox's cookie rotation
+  </Card>
+</CardGroup>
+
+## Authentication by environment
+
+### Browser environments
+
+In browser environments, authentication works automatically when users are logged into Roblox:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Cookies are sent automatically - no setup required!
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+<Info>
+No configuration is needed in browsers. RoZod automatically includes cookies from the user's active Roblox session.
+</Info>
+
+### Server environments
+
+For Node.js, Bun, or Deno environments, configure authentication once at startup:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+// Configure once at startup
+configureServer({ cookies: 'your_roblosecurity_cookie_here' });
+
+// All subsequent requests automatically include the cookie
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [123456] });
+```
+
+<Warning>
+Never commit `.ROBLOSECURITY` cookies to version control. Always use environment variables or secure secret management.
+</Warning>
+
+## OpenCloud authentication
+
+For OpenCloud endpoints on `apis.roblox.com`, use API keys instead of cookies:
+
+```typescript
+import { configureServer, fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Configure OpenCloud API key
+configureServer({ cloudKey: 'your_opencloud_api_key_here' });
+
+// All OpenCloud requests automatically include x-api-key header
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+```
+
+You can configure both classic API cookies and OpenCloud keys together:
+
+```typescript
+configureServer({
+  cookies: ['account1', 'account2'],  // For classic *.roblox.com APIs
+  cloudKey: 'your_opencloud_key',     // For apis.roblox.com
+});
+```
+
+<Note>
+The API key is only applied to OpenCloud endpoints (URLs containing `/cloud/`). Cookies are applied to all other Roblox APIs.
+</Note>
+
+## Configuration management
+
+RoZod provides utilities to manage your server configuration:
+
+```typescript
+import { configureServer, clearServerConfig, getServerConfig } from 'rozod';
+
+// Check current configuration
+const config = getServerConfig();
+console.log(config.cookies, config.cloudKey);
+
+// Clear all server configuration
+clearServerConfig();
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Browser authentication" icon="globe" href="/auth/browser">
+    Learn about browser-specific authentication features
+  </Card>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Configure authentication for Node.js, Bun, and Deno
+  </Card>
+  <Card title="Cookie pools" icon="layer-group" href="/auth/cookie-pools">
+    Use multiple accounts for load distribution
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand automatic security handling
+  </Card>
+</CardGroup>

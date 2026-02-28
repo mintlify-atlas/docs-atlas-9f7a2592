@@ -1,0 +1,305 @@
+---
+title: fetchApiPages & fetchApiPagesGenerator
+description: Functions for handling paginated API responses
+---
+
+## Overview
+
+RoZod provides two functions for handling paginated API responses:
+
+- **`fetchApiPages`** - Automatically fetches all pages and returns them as an array
+- **`fetchApiPagesGenerator`** - Returns an async generator that yields pages one at a time
+
+Both functions handle cursor-based pagination automatically by detecting and following `nextPageCursor` fields in responses.
+
+## fetchApiPages
+
+Fetches all pages of results and returns them as an array.
+
+### Signature
+
+```typescript
+async function fetchApiPages<S extends EndpointSchema>(
+  endpoint: S,
+  initialParams: ExtractParams<S>,
+  requestOptions?: RequestOptions,
+  limit?: number
+): Promise<Array<ExtractResponse<S>> | AnyError>
+```
+
+### Parameters
+
+<ParamField path="endpoint" type="EndpointSchema" required>
+  The endpoint definition object. Must be a paginated endpoint that returns responses with a `nextPageCursor` field.
+</ParamField>
+
+<ParamField path="initialParams" type="ExtractParams<S>" required>
+  Initial parameters for the first request. The `cursor` parameter will be added automatically for subsequent pages.
+</ParamField>
+
+<ParamField path="requestOptions" type="RequestOptions">
+  Additional options for each request. See [fetchApi](/api/fetch-api) for available options.
+</ParamField>
+
+<ParamField path="limit" type="number" default={1000}>
+  Maximum number of pages to fetch. Prevents infinite loops on endpoints with continuous pagination.
+</ParamField>
+
+### Return value
+
+Returns a `Promise` that resolves to:
+
+- **Success**: Array of response objects (one per page), with `nextPageCursor` removed from each
+- **Error**: An `AnyError` object if any request fails
+
+### Examples
+
+#### Fetch all wall posts
+
+```typescript
+import { fetchApiPages, isAnyErrorResponse } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const allPosts = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+if (isAnyErrorResponse(allPosts)) {
+  console.error('Error:', allPosts.message);
+} else {
+  console.log(`Fetched ${allPosts.length} pages of wall posts`);
+  
+  // Each element is a page of results
+  allPosts.forEach((page, index) => {
+    console.log(`Page ${index + 1} has ${page.data.length} posts`);
+  });
+}
+```
+
+#### With page limit
+
+```typescript
+// Only fetch first 5 pages
+const pages = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 },
+  undefined,
+  5 // limit
+);
+```
+
+#### With request options
+
+```typescript
+const pages = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 },
+  {
+    retries: 3,
+    retryDelay: 1000,
+    throwOnError: true
+  }
+);
+```
+
+---
+
+## fetchApiPagesGenerator
+
+Returns an async generator that yields pages one at a time as they're fetched. More memory-efficient for large result sets.
+
+### Signature
+
+```typescript
+async function* fetchApiPagesGenerator<S extends EndpointSchema>(
+  endpoint: S,
+  initialParams: ExtractParams<S>,
+  requestOptions?: RequestOptions,
+  limit?: number
+): AsyncGenerator<ExtractResponse<S> | AnyError, void, unknown>
+```
+
+### Parameters
+
+<ParamField path="endpoint" type="EndpointSchema" required>
+  The endpoint definition object. Must be a paginated endpoint that returns responses with a `nextPageCursor` field.
+</ParamField>
+
+<ParamField path="initialParams" type="ExtractParams<S>" required>
+  Initial parameters for the first request. The `cursor` parameter will be added automatically for subsequent pages.
+</ParamField>
+
+<ParamField path="requestOptions" type="RequestOptions">
+  Additional options for each request. See [fetchApi](/api/fetch-api) for available options.
+</ParamField>
+
+<ParamField path="limit" type="number" default={1000}>
+  Maximum number of pages to fetch.
+</ParamField>
+
+### Return value
+
+Returns an `AsyncGenerator` that yields:
+
+- **Success pages**: Response objects with the complete page data including `nextPageCursor`
+- **Error**: An `AnyError` object if any request fails (generator stops after yielding the error)
+
+### Examples
+
+#### Process pages as they arrive
+
+```typescript
+import { fetchApiPagesGenerator, isAnyErrorResponse } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+for await (const page of pages) {
+  if (isAnyErrorResponse(page)) {
+    console.error('Error:', page.message);
+    break;
+  }
+  
+  console.log(`Processing page with ${page.data.length} posts`);
+  
+  // Process this page immediately
+  for (const post of page.data) {
+    await processPost(post);
+  }
+}
+```
+
+#### Collect specific data from each page
+
+```typescript
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+const allPostIds: number[] = [];
+
+for await (const page of pages) {
+  if (isAnyErrorResponse(page)) {
+    console.error('Error:', page.message);
+    break;
+  }
+  
+  // Extract just the IDs from this page
+  const pageIds = page.data.map(post => post.id);
+  allPostIds.push(...pageIds);
+  
+  console.log(`Collected ${pageIds.length} IDs from this page`);
+}
+
+console.log(`Total posts: ${allPostIds.length}`);
+```
+
+#### Stop early based on condition
+
+```typescript
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+for await (const page of pages) {
+  if (isAnyErrorResponse(page)) break;
+  
+  // Stop if we find a specific post
+  const found = page.data.find(post => post.id === targetId);
+  if (found) {
+    console.log('Found target post:', found);
+    break; // Stop fetching more pages
+  }
+}
+```
+
+#### With limit and options
+
+```typescript
+const pages = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 },
+  { retries: 3, retryDelay: 1000 },
+  10 // Max 10 pages
+);
+
+for await (const page of pages) {
+  if (isAnyErrorResponse(page)) {
+    console.error('Error:', page.message);
+    break;
+  }
+  
+  console.log('Processing page:', page.data.length);
+}
+```
+
+## Comparison
+
+### Use `fetchApiPages` when:
+
+- You need all results at once
+- The total result set is reasonably small
+- You want simpler code without generator syntax
+- You need to process results after collection
+
+### Use `fetchApiPagesGenerator` when:
+
+- You have large result sets
+- You want to process results as they arrive
+- You need memory efficiency
+- You might stop early based on conditions
+- You want to stream results to users
+
+## Type safety
+
+Both functions preserve full type safety:
+
+```typescript
+import { fetchApiPages, fetchApiPagesGenerator } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+// fetchApiPages returns typed array
+const pages = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+if (!isAnyErrorResponse(pages)) {
+  pages.forEach(page => {
+    page.data.forEach(post => {
+      console.log(post.poster.username); // ✓ Fully typed
+    });
+  });
+}
+
+// fetchApiPagesGenerator yields typed pages
+for await (const page of fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+)) {
+  if (!isAnyErrorResponse(page)) {
+    page.data.forEach(post => {
+      console.log(post.poster.username); // ✓ Fully typed
+    });
+  }
+}
+```
+
+<Note>
+  Both functions automatically handle the `cursor` parameter. Don't include it in your initial parameters - it will be added automatically.
+</Note>
+
+<Warning>
+  Set an appropriate `limit` parameter to prevent accidentally fetching excessive data from endpoints with very large result sets.
+</Warning>
+
+## Related functions
+
+- [fetchApi](/api/fetch-api) - Core function for single requests
+- [fetchApiSplit](/api/fetch-api-split) - Split large requests into batches

@@ -1,0 +1,170 @@
+---
+title: Installation
+description: Install RoZod using your preferred package manager
+---
+
+## Package managers
+
+RoZod is available on npm and works with all major JavaScript package managers. Choose your preferred tool below.
+
+<CodeGroup>
+
+```bash npm
+npm install rozod
+```
+
+```bash yarn
+yarn add rozod
+```
+
+```bash pnpm
+pnpm add rozod
+```
+
+```bash bun
+bun add rozod
+```
+
+</CodeGroup>
+
+## Requirements
+
+RoZod requires the following to run:
+
+- **Node.js** 16.x or higher (for NodeJS environments)
+- **TypeScript** 4.5 or higher (recommended for type safety)
+- **Zod** 4.x (automatically installed as a dependency)
+
+<Info>
+  RoZod works seamlessly in NodeJS, Bun, Deno, and browser environments without any special configuration.
+</Info>
+
+## Dependencies
+
+RoZod automatically installs the following dependencies:
+
+- **zod** - Schema validation and type inference
+- **parse-roblox-errors** - Error parsing for Roblox API responses
+- **roblox-bat** - Hardware-backed authentication support
+
+These are handled automatically during installation - no manual setup required.
+
+## Verify installation
+
+After installation, verify RoZod is working correctly:
+
+<Steps>
+  <Step title="Create a test file">
+    Create a new file called `test.ts` or `test.js` in your project:
+
+    ```typescript test.ts
+    import { fetchApi } from 'rozod';
+    import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+    const response = await fetchApi(getGamesIcons, { 
+      universeIds: [1534453623] 
+    });
+    
+    console.log('RoZod is working!', response.data);
+    ```
+  </Step>
+
+  <Step title="Run the test file">
+    Execute the file with your runtime:
+
+    <CodeGroup>
+
+    ```bash node
+    node test.js
+    ```
+
+    ```bash bun
+    bun test.ts
+    ```
+
+    ```bash deno
+    deno run test.ts
+    ```
+
+    </CodeGroup>
+  </Step>
+
+  <Step title="Check the output">
+    You should see game icon data printed to the console. If you see the output, RoZod is installed correctly!
+  </Step>
+</Steps>
+
+## TypeScript configuration
+
+For the best experience with TypeScript, ensure your `tsconfig.json` includes:
+
+```json tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,
+    "esModuleInterop": true,
+    "moduleResolution": "node",
+    "target": "ES2020",
+    "module": "ESNext"
+  }
+}
+```
+
+<Tip>
+  Enable `strict` mode in TypeScript to take full advantage of RoZod's type safety features.
+</Tip>
+
+## Browser usage
+
+To use RoZod in browser environments, you'll need a bundler like Vite, Webpack, or Rollup:
+
+<CodeGroup>
+
+```javascript vite.config.js
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  // RoZod works out of the box with Vite
+});
+```
+
+```javascript webpack.config.js
+module.exports = {
+  // RoZod works with standard Webpack configuration
+  resolve: {
+    extensions: ['.ts', '.js']
+  }
+};
+```
+
+</CodeGroup>
+
+<Info>
+  In browser environments, RoZod automatically uses cookies from the user's Roblox session. No authentication setup needed!
+</Info>
+
+## Deno usage
+
+For Deno, import RoZod directly from npm:
+
+```typescript
+import { fetchApi } from 'npm:rozod@6.3.0';
+import { getUsersUserdetails } from 'npm:rozod@6.3.0/lib/endpoints/usersv1';
+
+const userInfo = await fetchApi(getUsersUserdetails, { userIds: [1] });
+```
+
+<Warning>
+  Always specify the version when importing from npm in Deno to ensure consistent behavior.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Build your first RoZod application
+  </Card>
+  <Card title="Authentication" icon="key" href="/auth/overview">
+    Configure cookies and API keys
+  </Card>
+</CardGroup>

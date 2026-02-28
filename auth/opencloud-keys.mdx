@@ -1,0 +1,331 @@
+---
+title: OpenCloud API keys
+description: Authenticate with Roblox OpenCloud APIs using API keys
+---
+
+Roblox OpenCloud APIs use API key authentication instead of cookies. RoZod automatically detects OpenCloud endpoints and applies the appropriate authentication method.
+
+## Basic configuration
+
+Configure your OpenCloud API key once at startup:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY
+});
+```
+
+<Info>
+The API key is automatically applied as an `x-api-key` header only for OpenCloud endpoints (URLs containing `/cloud/`).
+</Info>
+
+## Using OpenCloud APIs
+
+Once configured, OpenCloud requests work seamlessly:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+// Get universe details
+const universeInfo = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+console.log(universeInfo.displayName);
+console.log(universeInfo.description);
+```
+
+## OpenCloud endpoints
+
+RoZod includes 95+ OpenCloud endpoints covering:
+
+- **Universe management**: Get and update universe information
+- **DataStores**: Read and write to DataStores
+- **Place publishing**: Upload and publish places
+- **Group management**: Manage group members and roles
+- **Messaging**: Send messages to players in-game
+- **Ordered DataStores**: Access ordered DataStore data
+- **Assets**: Upload and manage assets
+
+### Example: DataStore access
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries } from 'rozod/lib/opencloud/v2/cloud';
+
+// Configure once
+configureServer({
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY
+});
+
+// Get DataStore entries
+const entries = await fetchApi(
+  getCloudV2UniversesUniverseIdDataStoresDataStoreIdEntries,
+  {
+    universe_id: '123456789',
+    data_store_id: 'PlayerData',
+  }
+);
+```
+
+## Combined authentication
+
+You can configure both cookie-based and OpenCloud authentication together:
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOSECURITY_COOKIE,  // For classic *.roblox.com APIs
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY, // For apis.roblox.com/cloud/*
+});
+```
+
+RoZod automatically determines which authentication method to use based on the endpoint URL:
+
+- **OpenCloud endpoints** (`apis.roblox.com/cloud/*`): Use `x-api-key` header
+- **Classic endpoints** (all other `*.roblox.com`): Use cookie authentication
+
+<Note>
+Some endpoints on `apis.roblox.com` still use cookie-based authentication. RoZod correctly applies cookies to these non-OpenCloud endpoints.
+</Note>
+
+## Getting an API key
+
+To create an OpenCloud API key:
+
+1. Go to [Roblox Creator Dashboard](https://create.roblox.com/)
+2. Navigate to **Open Cloud** → **API Keys**
+3. Click **Create API Key**
+4. Configure permissions and scopes for your key
+5. Copy the generated API key
+
+<Warning>
+API keys are shown only once. Store them securely in environment variables or a secret manager.
+</Warning>
+
+## API key scopes
+
+OpenCloud API keys use scope-based permissions. RoZod includes scope information in endpoint metadata:
+
+```typescript
+import { v2 } from 'rozod/lib/opencloud';
+
+// Check required scopes for an endpoint
+console.log(v2.getCloudV2UniversesUniverseId.scopes);
+// ['universe:read']
+```
+
+<Info>
+Ensure your API key has the required scopes for the endpoints you're calling. Missing scopes will result in 403 Forbidden errors.
+</Info>
+
+## Manual API key headers
+
+You can also pass the API key per-request:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const universeInfo = await fetchApi(
+  v2.getCloudV2UniversesUniverseId,
+  { universe_id: '123456789' },
+  {
+    headers: {
+      'x-api-key': process.env.ROBLOX_OPENCLOUD_KEY
+    }
+  }
+);
+```
+
+<Note>
+Manual headers take precedence over `configureServer()` defaults. This is useful for testing or per-request customization.
+</Note>
+
+## Rate limiting
+
+OpenCloud APIs have different rate limits than classic APIs:
+
+- Most endpoints: 60 requests per minute per API key
+- DataStore operations: Higher limits based on universe size
+- Some endpoints have stricter limits
+
+<Warning>
+Rate limits are per API key, not per cookie. Multiple API keys won't increase rate limits unless they have different scopes.
+</Warning>
+
+## Error handling
+
+Handle OpenCloud-specific errors:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v2 } from 'rozod/lib/opencloud';
+
+const result = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+  universe_id: '123456789',
+});
+
+if (isAnyErrorResponse(result)) {
+  // OpenCloud uses BEDEV2 error format
+  console.error('Error:', result.message);
+  
+  if (result.message.includes('PERMISSION_DENIED')) {
+    console.error('API key lacks required scopes');
+  } else if (result.message.includes('RESOURCE_EXHAUSTED')) {
+    console.error('Rate limit exceeded');
+  } else if (result.message.includes('UNAUTHENTICATED')) {
+    console.error('Invalid or missing API key');
+  }
+}
+```
+
+<Info>
+OpenCloud APIs use BEDEV2 error format. RoZod automatically parses these errors into the standard `AnyError` format.
+</Info>
+
+## Security best practices
+
+### Store keys securely
+
+Never commit API keys to version control:
+
+```bash
+# .env file (add to .gitignore)
+ROBLOX_OPENCLOUD_KEY=your_api_key_here
+```
+
+```typescript
+import 'dotenv/config';
+import { configureServer } from 'rozod';
+
+configureServer({
+  cloudKey: process.env.ROBLOX_OPENCLOUD_KEY
+});
+```
+
+### Use minimal scopes
+
+Create separate API keys for different purposes with only required scopes:
+
+```typescript
+// Read-only key for analytics
+configureServer({
+  cloudKey: process.env.ANALYTICS_KEY // Only 'universe:read' scope
+});
+
+// Admin key for DataStore operations
+configureServer({
+  cloudKey: process.env.ADMIN_KEY // 'datastore:read' and 'datastore:write' scopes
+});
+```
+
+### Rotate keys regularly
+
+Periodically rotate API keys:
+
+1. Create a new API key in Creator Dashboard
+2. Update your environment variables
+3. Deploy updated configuration
+4. Revoke old API key after verifying new one works
+
+## OpenCloud vs classic APIs
+
+<AccordionGroup>
+  <Accordion title="When to use OpenCloud APIs">
+    - Need server-to-server authentication
+    - Want fine-grained permission control
+    - Building production services
+    - Accessing DataStores from external servers
+    - Need stable, versioned API contracts
+  </Accordion>
+  
+  <Accordion title="When to use classic APIs">
+    - Need access to web-only features (groups, avatars, etc.)
+    - Building browser extensions or user-facing apps
+    - Need features not yet available in OpenCloud
+    - Working with the Roblox website ecosystem
+  </Accordion>
+</AccordionGroup>
+
+## OpenCloud API versions
+
+RoZod supports both OpenCloud API versions:
+
+<Tabs>
+  <Tab title="V2 (recommended)">
+    ```typescript
+    import { v2 } from 'rozod/lib/opencloud';
+    import { fetchApi } from 'rozod';
+    
+    // V2 endpoints use cleaner paths
+    const universe = await fetchApi(v2.getCloudV2UniversesUniverseId, {
+      universe_id: '123456789'
+    });
+    ```
+  </Tab>
+  <Tab title="V1">
+    ```typescript
+    import { v1 } from 'rozod/lib/opencloud';
+    import { fetchApi } from 'rozod';
+    
+    // V1 endpoints still available
+    const datastores = await fetchApi(v1.getCloudV1UniversesUniverseIdDatastores, {
+      universe_id: '123456789'
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+V2 is the recommended version for new projects. It provides better consistency and follows modern API design patterns.
+</Info>
+
+## Troubleshooting
+
+### Invalid API key
+
+If you get authentication errors:
+
+1. Verify the API key in Creator Dashboard
+2. Check that the key hasn't been revoked
+3. Ensure the key has required scopes
+4. Verify the environment variable is set correctly
+
+### Missing scopes
+
+If you get permission denied errors:
+
+1. Check the endpoint's required scopes
+2. Update the API key in Creator Dashboard to include missing scopes
+3. Use a different API key with appropriate permissions
+
+### Rate limiting
+
+If you hit rate limits:
+
+1. Implement backoff and retry logic
+2. Cache responses when possible
+3. Batch operations to reduce request count
+4. Consider upgrading your universe tier for higher limits
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Server authentication" icon="server" href="/auth/server">
+    Learn about cookie-based authentication
+  </Card>
+  <Card title="Security features" icon="shield" href="/auth/security-features">
+    Understand automatic security mechanisms
+  </Card>
+  <Card title="Error handling" icon="triangle-exclamation" href="/concepts/error-handling">
+    Handle API errors gracefully
+  </Card>
+  <Card title="OpenCloud endpoints" icon="cloud" href="/api/opencloud/overview">
+    Browse available OpenCloud endpoints
+  </Card>
+</CardGroup>

@@ -1,0 +1,417 @@
+---
+title: "Error handling"
+description: "Error handling patterns in RoZod"
+---
+
+## Overview
+
+RoZod provides flexible error handling with two approaches:
+
+1. **Union types** (default) - Responses are typed as `SuccessType | AnyError`
+2. **Exceptions** - Enable `throwOnError: true` to throw errors
+
+Both approaches parse and structure Roblox error responses automatically.
+
+## Default error handling (union types)
+
+By default, `fetchApi` returns either the success response or an `AnyError` object:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(getGamesIcons, {
+  universeIds: [1534453623]
+});
+
+if (isAnyErrorResponse(response)) {
+  console.error('Error:', response.message);
+  console.error('User-facing message:', response.userFacingMessage);
+  return;
+}
+
+// TypeScript knows response is the success type here
+console.log(response.data);
+```
+
+### AnyError structure
+
+The `AnyError` type contains parsed error information:
+
+```typescript
+type AnyError = {
+  message: string;           // Error message
+  userFacingMessage?: string; // Optional user-friendly message
+  code?: number;             // Optional error code
+  field?: string;            // Optional field that caused the error
+  retryable?: boolean;       // Whether the error is retryable
+};
+```
+
+<Tip>
+Use `isAnyErrorResponse()` as a type guard to narrow the response type and access error properties safely.
+</Tip>
+
+## Exception-based error handling
+
+Enable `throwOnError: true` to use try/catch instead:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+try {
+  const response = await fetchApi(
+    getGamesIcons,
+    { universeIds: [1534453623] },
+    { throwOnError: true }
+  );
+  
+  // response is typed as the success type only
+  console.log(response.data);
+} catch (error) {
+  console.error('Failed to fetch game icons:', (error as Error).message);
+}
+```
+
+With `throwOnError: true`:
+- Successful responses return the expected type directly
+- Failed requests throw an `Error` with the message from `AnyError.userFacingMessage` or `AnyError.message`
+
+## Error types by API
+
+RoZod automatically parses different Roblox error formats:
+
+### Classic API errors (BEDEV1)
+
+Classic Roblox APIs (e.g., `users.roblox.com`) use the BEDEV1 format:
+
+```json
+{
+  "errors": [
+    {
+      "code": 3,
+      "message": "The user is invalid.",
+      "userFacingMessage": "Something went wrong"
+    }
+  ]
+}
+```
+
+Parsed into `AnyError`:
+
+```typescript
+{
+  code: 3,
+  message: "The user is invalid.",
+  userFacingMessage: "Something went wrong"
+}
+```
+
+### OpenCloud errors (BEDEV2)
+
+OpenCloud APIs (e.g., `apis.roblox.com`) use the BEDEV2 format:
+
+```json
+{
+  "error": "INVALID_ARGUMENT",
+  "message": "universe_id is required",
+  "details": [
+    {
+      "@type": "type.googleapis.com/google.rpc.BadRequest",
+      "fieldViolations": [
+        {
+          "field": "universe_id",
+          "description": "Required field missing"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Parsed into `AnyError`:
+
+```typescript
+{
+  code: "INVALID_ARGUMENT",
+  message: "universe_id is required",
+  field: "universe_id",
+  userFacingMessage: "Required field missing"
+}
+```
+
+### Generic HTTP errors
+
+For non-Roblox domains, RoZod provides best-effort error parsing:
+
+```typescript
+// JSON error response
+{
+  message: "Error message from JSON response"
+}
+
+// Text error response
+{
+  message: "Error text from response body (truncated to 1000 chars)"
+}
+
+// No response body
+{
+  message: "HTTP 500" // Falls back to status text
+}
+```
+
+## Handling specific errors
+
+Check error codes to handle specific scenarios:
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { getUsersUserdetails } from 'rozod/lib/endpoints/usersv1';
+
+const response = await fetchApi(getUsersUserdetails, {
+  userIds: [123456]
+});
+
+if (isAnyErrorResponse(response)) {
+  switch (response.code) {
+    case 3:
+      console.error('Invalid user');
+      break;
+    case 401:
+      console.error('Authentication required');
+      break;
+    default:
+      console.error('Unknown error:', response.message);
+  }
+  return;
+}
+
+console.log(response.data);
+```
+
+## Network errors
+
+Network failures (DNS errors, timeouts, connection issues) throw standard JavaScript errors:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+try {
+  const response = await fetchApi(getGamesIcons, {
+    universeIds: [1534453623]
+  });
+  
+  if (isAnyErrorResponse(response)) {
+    // Handle API errors
+    console.error('API error:', response.message);
+  } else {
+    // Success
+    console.log(response.data);
+  }
+} catch (error) {
+  // Handle network errors (DNS failure, timeout, etc.)
+  console.error('Network error:', (error as Error).message);
+}
+```
+
+<Note>
+Network errors always throw regardless of the `throwOnError` setting. Use try/catch to handle these.
+</Note>
+
+## Retry logic
+
+Add retry logic for transient failures:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  {
+    retries: 3,
+    retryDelay: 1000, // 1 second between retries
+  }
+);
+```
+
+Retry options:
+- **retries** - Number of retry attempts (default: 0)
+- **retryDelay** - Milliseconds to wait between retries (default: 0)
+
+<Warning>
+Retries only apply to network-level failures, not API errors. A 400 Bad Request won't be retried automatically.
+</Warning>
+
+## Paginated error handling
+
+When fetching multiple pages, the first error stops iteration:
+
+```typescript
+import { fetchApiPages, isAnyErrorResponse } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const pages = await fetchApiPages(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+if (isAnyErrorResponse(pages)) {
+  console.error('Failed to fetch pages:', pages.message);
+  return;
+}
+
+// pages is an array of successful responses
+console.log(`Fetched ${pages.length} pages`);
+```
+
+With the generator, check each page individually:
+
+```typescript
+import { fetchApiPagesGenerator, isAnyErrorResponse } from 'rozod';
+import { getGroupsGroupidWallPosts } from 'rozod/lib/endpoints/groupsv2';
+
+const generator = fetchApiPagesGenerator(
+  getGroupsGroupidWallPosts,
+  { groupId: 11479637 }
+);
+
+for await (const page of generator) {
+  if (isAnyErrorResponse(page)) {
+    console.error('Error on page:', page.message);
+    break; // Stop iteration
+  }
+  
+  console.log(`Processing ${page.data.length} posts`);
+}
+```
+
+## Batch request errors
+
+`fetchApiSplit` returns an error if any batch fails:
+
+```typescript
+import { fetchApiSplit, isAnyErrorResponse } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const results = await fetchApiSplit(
+  getGamesIcons,
+  { universeIds: Array.from({ length: 500 }, (_, i) => i + 1) },
+  { universeIds: 100 }, // Split into batches of 100
+);
+
+if (isAnyErrorResponse(results)) {
+  console.error('Batch request failed:', results.message);
+  return;
+}
+
+// results is an array of successful batch responses
+console.log(`Processed ${results.length} batches`);
+```
+
+## Raw response access
+
+For advanced error handling, access the raw Response object:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { getGamesIcons } from 'rozod/lib/endpoints/gamesv1';
+
+const response = await fetchApi(
+  getGamesIcons,
+  { universeIds: [1534453623] },
+  { returnRaw: true }
+);
+
+if (!response.ok) {
+  console.error('Status:', response.status);
+  console.error('Status text:', response.statusText);
+  console.error('Headers:', Object.fromEntries(response.headers));
+  
+  const body = await response.text();
+  console.error('Body:', body);
+  return;
+}
+
+const data = await response.json();
+console.log(data);
+```
+
+<Tip>
+With `returnRaw: true`, you get the full `Response` object and can inspect status codes, headers, and raw body content.
+</Tip>
+
+## Best practices
+
+### Choose the right approach
+
+- Use **union types** (default) when errors are expected and need different handling logic
+- Use **throwOnError** when errors are exceptional and you want simpler happy-path code
+
+### Always handle errors
+
+```typescript
+// Good: Checks for errors
+const response = await fetchApi(endpoint, params);
+if (isAnyErrorResponse(response)) {
+  return handleError(response);
+}
+processSuccess(response);
+
+// Bad: Assumes success
+const response = await fetchApi(endpoint, params);
+processSuccess(response); // TypeScript error if not checked!
+```
+
+### Provide user feedback
+
+Use `userFacingMessage` when available for end-user display:
+
+```typescript
+if (isAnyErrorResponse(response)) {
+  // Show user-friendly message if available
+  const displayMessage = response.userFacingMessage || response.message;
+  showErrorToUser(displayMessage);
+  
+  // Log technical details for debugging
+  console.error('Error details:', response);
+}
+```
+
+### Handle network errors separately
+
+```typescript
+try {
+  const response = await fetchApi(endpoint, params);
+  
+  if (isAnyErrorResponse(response)) {
+    // API error - show user message
+    showError(response.userFacingMessage || response.message);
+  } else {
+    // Success
+    processData(response);
+  }
+} catch (error) {
+  // Network error - generic message
+  showError('Unable to connect. Please check your internet connection.');
+  console.error('Network error:', error);
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Type safety" icon="shield" href="/concepts/type-safety">
+  Learn about TypeScript type inference and validation.
+</Card>
+
+<Card title="Authentication" icon="lock" href="/concepts/authentication">
+  Understand authentication and security features.
+</Card>
+
+</CardGroup>

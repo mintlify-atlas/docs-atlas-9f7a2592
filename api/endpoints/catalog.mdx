@@ -1,0 +1,332 @@
+---
+title: "Catalog API"
+description: "Browse and search the Roblox catalog for items and bundles"
+---
+
+The Catalog API provides access to the Roblox marketplace, allowing you to search items, fetch bundle information, and manage favorites.
+
+## Importing endpoints
+
+Import the endpoints you need from the catalog module:
+
+```typescript
+import { getBundlesBundleidDetails, getCategories, postCatalogItemsDetails } from 'rozod/endpoints/catalogv1';
+import { fetchApi } from 'rozod';
+```
+
+## Get bundle details
+
+Fetch detailed information about a bundle.
+
+```typescript
+const bundle = await fetchApi(getBundlesBundleidDetails, {
+  bundleId: 123,
+});
+
+if (!isAnyErrorResponse(bundle)) {
+  console.log(`${bundle.name} - ${bundle.description}`);
+  console.log(`Type: ${bundle.bundleType}`);
+  console.log(`Price: ${bundle.product.priceInRobux} Robux`);
+  
+  bundle.items.forEach((item) => {
+    console.log(`- ${item.name} (${item.type})`);
+  });
+}
+```
+
+## Get multiple bundle details
+
+Fetch information for multiple bundles at once.
+
+```typescript
+import { getBundlesDetails } from 'rozod/endpoints/catalogv1';
+
+const bundles = await fetchApi(getBundlesDetails, {
+  bundleIds: [123, 456, 789],
+});
+
+if (!isAnyErrorResponse(bundles)) {
+  bundles.forEach((bundle) => {
+    console.log(`${bundle.name}: ${bundle.product.priceInRobux} Robux`);
+  });
+}
+```
+
+<Note>
+You can request up to 120 bundles at once using `getBundlesDetails`.
+</Note>
+
+## Get catalog items
+
+Retrieve detailed information about catalog items and bundles.
+
+```typescript
+const items = await fetchApi(postCatalogItemsDetails, {
+  body: {
+    items: [
+      { itemType: 1, id: 1028595 }, // Asset
+      { itemType: 2, id: 192 },     // Bundle
+    ],
+  },
+});
+
+if (!isAnyErrorResponse(items)) {
+  items.data.forEach((item) => {
+    console.log(`${item.name} - ${item.price} Robux`);
+    console.log(`Creator: ${item.creatorName}`);
+    console.log(`Favorites: ${item.favoriteCount}`);
+  });
+}
+```
+
+## Browse catalog categories
+
+Get all available catalog categories.
+
+```typescript
+const categories = await fetchApi(getCategories, undefined);
+
+if (!isAnyErrorResponse(categories)) {
+  categories.forEach((category) => {
+    console.log(`${category.name} (ID: ${category.categoryId})`);
+    category.subcategories.forEach((sub) => {
+      console.log(`  - ${sub.name}`);
+    });
+  });
+}
+```
+
+## Favorites
+
+### Get favorite count for asset
+
+```typescript
+import { getFavoritesAssetsAssetidCount } from 'rozod/endpoints/catalogv1';
+
+const count = await fetchApi(getFavoritesAssetsAssetidCount, {
+  assetId: 1028595,
+});
+
+if (!isAnyErrorResponse(count)) {
+  console.log(`Favorites: ${count}`);
+}
+```
+
+### Favorite an asset
+
+```typescript
+import { postFavoritesUsersUseridAssetsAssetidFavorite } from 'rozod/endpoints/catalogv1';
+
+const result = await fetchApi(postFavoritesUsersUseridAssetsAssetidFavorite, {
+  userId: 1234567890,
+  assetId: 1028595,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Asset favorited');
+}
+```
+
+### Unfavorite an asset
+
+```typescript
+import { deleteFavoritesUsersUseridAssetsAssetidFavorite } from 'rozod/endpoints/catalogv1';
+
+const result = await fetchApi(deleteFavoritesUsersUseridAssetsAssetidFavorite, {
+  userId: 1234567890,
+  assetId: 1028595,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Asset unfavorited');
+}
+```
+
+<Tip>
+You can only favorite/unfavorite items for the authenticated user. The `userId` must match your authenticated account.
+</Tip>
+
+## Get user favorites
+
+Retrieve a user's favorited items by asset type.
+
+```typescript
+import { getFavoritesUsersUseridFavoritesAssettypeidAssets } from 'rozod/endpoints/catalogv1';
+
+const favorites = await fetchApi(getFavoritesUsersUseridFavoritesAssettypeidAssets, {
+  userId: 1234567890,
+  assetTypeId: 8, // Hat
+  limit: 25,
+  sortOrder: 'Desc',
+});
+
+if (!isAnyErrorResponse(favorites)) {
+  favorites.data.forEach((item) => {
+    console.log(`${item.name} by ${item.creatorName}`);
+  });
+}
+```
+
+## Get bundle recommendations
+
+Get recommended bundles based on a bundle ID.
+
+```typescript
+import { getBundlesBundleidRecommendations } from 'rozod/endpoints/catalogv1';
+
+const recommendations = await fetchApi(getBundlesBundleidRecommendations, {
+  bundleId: 123,
+  numItems: 10,
+});
+
+if (!isAnyErrorResponse(recommendations)) {
+  recommendations.data.forEach((bundle) => {
+    console.log(`${bundle.name} - ${bundle.product.priceInRobux} Robux`);
+  });
+}
+```
+
+## Get bundles for asset
+
+Find which bundles contain a specific asset.
+
+```typescript
+import { getAssetsAssetidBundles } from 'rozod/endpoints/catalogv1';
+
+const bundles = await fetchApi(getAssetsAssetidBundles, {
+  assetId: 1028595,
+  limit: 10,
+});
+
+if (!isAnyErrorResponse(bundles)) {
+  bundles.data.forEach((bundle) => {
+    console.log(`${bundle.name} includes this asset`);
+  });
+}
+```
+
+## Get owned bundles
+
+Retrieve bundles owned by a user.
+
+```typescript
+import { getUsersUseridBundles } from 'rozod/endpoints/catalogv1';
+
+const ownedBundles = await fetchApi(getUsersUseridBundles, {
+  userId: 1234567890,
+  limit: 25,
+  sortOrder: 2, // 1 = Asc, 2 = Desc
+});
+
+if (!isAnyErrorResponse(ownedBundles)) {
+  ownedBundles.data.forEach((bundle) => {
+    console.log(`${bundle.name} (${bundle.bundleType})`);
+  });
+}
+```
+
+## Bundle favorites
+
+### Get favorite bundles
+
+```typescript
+import { getFavoritesUsersUseridFavoritesSubtypeidBundles } from 'rozod/endpoints/catalogv1';
+
+const favBundles = await fetchApi(getFavoritesUsersUseridFavoritesSubtypeidBundles, {
+  userId: 1234567890,
+  subtypeId: 1, // Bundle type filter
+  itemsPerPage: 24,
+});
+
+if (!isAnyErrorResponse(favBundles)) {
+  favBundles.favorites.forEach((bundle) => {
+    console.log(`${bundle.name}`);
+  });
+}
+```
+
+### Favorite a bundle
+
+```typescript
+import { postFavoritesUsersUseridBundlesBundleidFavorite } from 'rozod/endpoints/catalogv1';
+
+const result = await fetchApi(postFavoritesUsersUseridBundlesBundleidFavorite, {
+  userId: 1234567890,
+  bundleId: 123,
+});
+
+if (!isAnyErrorResponse(result)) {
+  console.log('Bundle favorited');
+}
+```
+
+## Common patterns
+
+### Batch item lookups
+
+Use `postCatalogItemsDetails` to efficiently fetch multiple items:
+
+```typescript
+const items = await fetchApi(postCatalogItemsDetails, {
+  body: {
+    items: [
+      { itemType: 1, id: 123 },
+      { itemType: 1, id: 456 },
+      { itemType: 2, id: 789 },
+    ],
+  },
+});
+```
+
+### Check if item is on sale
+
+```typescript
+const items = await fetchApi(postCatalogItemsDetails, {
+  body: { items: [{ itemType: 1, id: 1028595 }] },
+});
+
+if (!isAnyErrorResponse(items) && items.data.length > 0) {
+  const item = items.data[0];
+  console.log(`On sale: ${!item.isOffSale}`);
+  console.log(`Price: ${item.price} Robux`);
+}
+```
+
+### Get Limited/Limited U items
+
+Check collectible status and availability:
+
+```typescript
+const items = await fetchApi(postCatalogItemsDetails, {
+  body: { items: [{ itemType: 1, id: 1028595 }] },
+});
+
+if (!isAnyErrorResponse(items) && items.data.length > 0) {
+  const item = items.data[0];
+  
+  if (item.collectibleItemId) {
+    console.log('This is a Limited/Limited U item');
+    console.log(`Total quantity: ${item.totalQuantity}`);
+    console.log(`Available: ${item.unitsAvailableForConsumption}`);
+    console.log(`Lowest price: ${item.lowestPrice} Robux`);
+  }
+}
+```
+
+## Available endpoints
+
+All endpoints are exported from `rozod/endpoints/catalogv1`:
+
+- `getBundlesBundleidDetails` - Get bundle details
+- `getBundlesDetails` - Get multiple bundles
+- `postCatalogItemsDetails` - Get item details
+- `getCategories` - Get catalog categories
+- `getFavoritesAssetsAssetidCount` - Get favorite count
+- `postFavoritesUsersUseridAssetsAssetidFavorite` - Favorite asset
+- `deleteFavoritesUsersUseridAssetsAssetidFavorite` - Unfavorite asset
+- `getFavoritesUsersUseridFavoritesAssettypeidAssets` - Get user favorites
+- `getBundlesBundleidRecommendations` - Get bundle recommendations
+- `getUsersUseridBundles` - Get owned bundles
+- And more...
+
+For the complete list, refer to the TypeScript types in your IDE.

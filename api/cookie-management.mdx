@@ -1,0 +1,238 @@
+---
+title: 'Cookie management'
+description: 'Manage and refresh Roblox authentication cookies in your application'
+---
+
+## refreshCookie
+
+Proactively refreshes a cookie session using Roblox's session refresh endpoint. This creates a new session and invalidates the old one, returning the new cookie.
+
+Use this to manually trigger cookie rotation before the automatic rotation kicks in, or to refresh cookies on a schedule to ensure they don't expire.
+
+This function uses the library's internal fetch mechanism, which includes:
+- Automatic CSRF token handling
+- Hardware-backed authentication (HBA) signatures
+- Generic challenge handling (if configured)
+
+```typescript
+async function refreshCookie(cookieIndex?: number): Promise<RefreshCookieResult>
+```
+
+### Parameters
+
+<ParamField path="cookieIndex" type="number" default="0">
+  Index in the cookie pool to refresh. Ignored if using a single cookie.
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="RefreshCookieResult">
+  Result object with success status and new cookie value if successful.
+
+  <Expandable title="RefreshCookieResult properties">
+    <ResponseField name="success" type="boolean" required>
+      Whether the cookie refresh was successful.
+    </ResponseField>
+
+    <ResponseField name="newCookie" type="string">
+      The new cookie value if refresh was successful.
+    </ResponseField>
+
+    <ResponseField name="error" type="string">
+      Error message if refresh failed.
+    </ResponseField>
+
+    <ResponseField name="poolIndex" type="number" required>
+      The index in the cookie pool that was refreshed.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Refresh default cookie
+import { refreshCookie } from 'rozod';
+
+// Refresh the default/first cookie
+const result = await refreshCookie();
+if (result.success) {
+  console.log('New cookie:', result.newCookie);
+  // Persist the new cookie to your storage
+  await db.updateCookie(result.poolIndex, result.newCookie);
+} else {
+  console.error('Refresh failed:', result.error);
+}
+```
+
+```typescript Refresh specific cookie
+import { refreshCookie } from 'rozod';
+
+// Refresh a specific cookie in the pool
+const result = await refreshCookie(2); // Refresh third account
+if (result.success) {
+  await db.updateCookie(2, result.newCookie);
+}
+```
+
+```typescript Refresh all cookies
+import { refreshCookie, getCookies } from 'rozod';
+
+// Refresh all cookies in a pool
+const cookies = getCookies();
+for (let i = 0; i < cookies.length; i++) {
+  const result = await refreshCookie(i);
+  if (result.success) {
+    await db.updateCookie(i, result.newCookie);
+  }
+}
+```
+
+```typescript Scheduled refresh
+import { refreshCookie } from 'rozod';
+
+// Refresh cookies on a schedule to prevent expiration
+setInterval(async () => {
+  const result = await refreshCookie(0);
+  if (result.success) {
+    console.log('Cookie refreshed proactively');
+    await db.updateCookie(0, result.newCookie);
+  }
+}, 24 * 60 * 60 * 1000); // Refresh every 24 hours
+```
+</CodeGroup>
+
+<Warning>
+  Refreshing a cookie creates a new session and invalidates the old one. Make sure to persist the new cookie value immediately to avoid losing authentication.
+</Warning>
+
+---
+
+## getCookies
+
+Gets the current cookie values from the pool. Useful for debugging or persisting all current cookie values.
+
+```typescript
+function getCookies(): string[]
+```
+
+### Returns
+
+<ResponseField name="cookies" type="string[]">
+  Array of current cookie values, or empty array if none configured.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Get all cookies
+import { getCookies } from 'rozod';
+
+const allCookies = getCookies();
+console.log(`Currently managing ${allCookies.length} cookies`);
+```
+
+```typescript Persist all cookies
+import { getCookies } from 'rozod';
+
+const cookies = getCookies();
+for (let i = 0; i < cookies.length; i++) {
+  await db.saveCookie(i, cookies[i]);
+}
+```
+
+```typescript Debug configuration
+import { getCookies, getServerConfig } from 'rozod';
+
+const cookies = getCookies();
+const config = getServerConfig();
+
+console.log('Cookie pool size:', cookies.length);
+console.log('Rotation mode:', config.cookieRotation);
+```
+</CodeGroup>
+
+---
+
+## updateCookie
+
+Updates a specific cookie in the cookie pool by index. Useful for manually updating cookies when you receive rotation events through other means.
+
+```typescript
+function updateCookie(index: number, newCookie: string): boolean
+```
+
+### Parameters
+
+<ParamField path="index" type="number" required>
+  The index in the cookie pool to update (0 for single cookie).
+</ParamField>
+
+<ParamField path="newCookie" type="string" required>
+  The new cookie value.
+</ParamField>
+
+### Returns
+
+<ResponseField name="success" type="boolean">
+  `true` if the cookie was updated, `false` if the index was invalid.
+</ResponseField>
+
+### Examples
+
+<CodeGroup>
+```typescript Update first cookie
+import { updateCookie } from 'rozod';
+
+// Update the first (or only) cookie
+const success = updateCookie(0, 'new_cookie_value');
+if (success) {
+  console.log('Cookie updated successfully');
+}
+```
+
+```typescript Update specific account
+import { updateCookie } from 'rozod';
+
+// Update a specific account in a pool
+const success = updateCookie(2, 'new_cookie_for_account_3');
+if (!success) {
+  console.error('Invalid cookie index');
+}
+```
+
+```typescript Manual rotation handling
+import { updateCookie } from 'rozod';
+
+// Handle cookie rotation from external source
+async function handleExternalRotation(index: number, newValue: string) {
+  const updated = updateCookie(index, newValue);
+  if (updated) {
+    await db.updateCookie(index, newValue);
+    console.log(`Cookie ${index} rotated externally`);
+  }
+}
+```
+</CodeGroup>
+
+<Note>
+  The `updateCookie` function updates both the cookie pool and the session cookie cache (for `'none'` rotation mode). The internal cookie pool is automatically updated when using `refreshCookie` or when RoZod detects automatic cookie rotation.
+</Note>
+
+## Types
+
+### RefreshCookieResult
+
+```typescript
+type RefreshCookieResult = {
+  success: boolean;
+  /** The new cookie value if refresh was successful */
+  newCookie?: string;
+  /** Error message if refresh failed */
+  error?: string;
+  /** The index in the cookie pool that was refreshed */
+  poolIndex: number;
+}
+```
+
+Result of a manual cookie refresh operation.

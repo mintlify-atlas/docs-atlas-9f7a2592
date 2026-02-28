@@ -1,0 +1,551 @@
+---
+title: Asset APIs
+description: Upload, manage, and version assets with OpenCloud Asset endpoints
+---
+
+Asset APIs enable you to create, update, retrieve, and manage experience assets including models, images, audio, and more through OpenCloud.
+
+## Overview
+
+Asset operations include:
+
+- Create and upload new assets
+- Update existing assets
+- Retrieve asset metadata
+- Manage asset versions
+- Archive and restore assets
+- Roll back to previous versions
+
+## Import
+
+```typescript v1
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+```
+
+<Note>
+Asset APIs are only available in v1. There is no v2 alternative yet.
+</Note>
+
+## Authentication
+
+Asset operations require specific scopes:
+
+- `asset:read` - Read asset metadata and versions
+- `asset:write` - Create, update, and manage assets
+
+```typescript
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cloudKey: 'your_api_key_with_asset_scopes' 
+});
+```
+
+## Supported asset types
+
+OpenCloud supports the following asset types:
+
+- **Model** - 3D models (.fbx, .obj)
+- **Image** - Images (.png, .jpg, .bmp, .tga)
+- **Audio** - Audio files (.mp3, .ogg)
+- **Video** - Video files (.mp4)
+- **Font Family** - Font files
+
+Each type has specific size limits and requirements. See [Roblox's documentation](https://create.roblox.com/docs/cloud/guides/usage-assets) for details.
+
+## Create an asset
+
+Upload a new asset with metadata:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+import * as fs from 'fs';
+
+const assetFile = fs.readFileSync('MyModel.fbx');
+
+const operation = await fetchApi(
+  v1.assets.postAssets,
+  {},
+  {
+    request: {
+      assetType: 'Model',
+      displayName: 'Epic Sword',
+      description: 'A legendary sword for brave warriors',
+      creationContext: {
+        creator: {
+          userId: 156,  // Or groupId for group-owned assets
+        },
+        expectedPrice: 0,
+      },
+    },
+    fileContent: assetFile,
+  }
+);
+
+console.log('Operation ID:', operation.path);
+console.log('Done:', operation.done);
+
+if (operation.done) {
+  console.log('Asset ID:', operation.response.assetId);
+}
+```
+
+## Check operation status
+
+Asset creation returns an operation that may complete asynchronously:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+async function waitForAssetCreation(operationId: string) {
+  let operation;
+  
+  do {
+    operation = await fetchApi(v1.assets.getOperationsOperationId, {
+      operationId: operationId,
+    });
+
+    if (!operation.done) {
+      console.log('Still processing...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  } while (!operation.done);
+
+  if (operation.error) {
+    throw new Error(`Operation failed: ${operation.error.message}`);
+  }
+
+  return operation.response;
+}
+
+const asset = await waitForAssetCreation('operation-id-here');
+console.log('Asset created:', asset.assetId);
+```
+
+## Get asset metadata
+
+Retrieve information about an existing asset:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const asset = await fetchApi(v1.assets.getAssetsAssetId, {
+  assetId: '123456789',
+  readMask: 'description,displayName,icon,previews',
+});
+
+console.log(asset.displayName);
+console.log(asset.description);
+console.log(asset.assetType);
+console.log(asset.state);            // Active or Archived
+console.log(asset.revisionId);       // Current revision
+console.log(asset.moderationResult); // Moderation status
+console.log(asset.creationContext);
+
+// Social links
+if (asset.socialLink) {
+  console.log(asset.socialLink.title);
+  console.log(asset.socialLink.uri);
+}
+
+// Previews
+for (const preview of asset.previews || []) {
+  console.log(preview.asset, preview.altText);
+}
+```
+
+<Info>
+Use `readMask` to request specific fields and reduce response size.
+</Info>
+
+## Update an asset
+
+Update asset metadata or upload a new version:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+import * as fs from 'fs';
+
+// Update metadata only
+const operation = await fetchApi(
+  v1.assets.patchAssetsAssetId,
+  {
+    assetId: '123456789',
+    updateMask: 'description,displayName',
+  },
+  {
+    request: {
+      description: 'Updated description',
+      displayName: 'Epic Sword v2',
+    },
+  }
+);
+
+// Update with new file
+const newFile = fs.readFileSync('MyModel_v2.fbx');
+
+const fileOperation = await fetchApi(
+  v1.assets.patchAssetsAssetId,
+  {
+    assetId: '123456789',
+    updateMask: 'description',
+  },
+  {
+    request: {
+      description: 'Version 2 with improved textures',
+    },
+    fileContent: newFile,
+  }
+);
+```
+
+## List asset versions
+
+Get version history for an asset:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const versions = await fetchApi(v1.assets.getAssetsAssetIdVersions, {
+  assetId: '123456789',
+  maxPageSize: 20,
+});
+
+for (const version of versions) {
+  console.log('Version:', version.path);
+  console.log('Published:', version.published);
+  console.log('Moderation:', version.moderationResult);
+}
+
+// Pagination
+if (versions.nextPageToken) {
+  const nextPage = await fetchApi(v1.assets.getAssetsAssetIdVersions, {
+    assetId: '123456789',
+    pageToken: versions.nextPageToken,
+  });
+}
+```
+
+## Get specific version
+
+Retrieve a particular version of an asset:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const version = await fetchApi(v1.assets.getAssetsAssetIdVersionsVersionNumber, {
+  assetId: '123456789',
+  versionNumber: '2',
+});
+
+console.log(version.path);
+console.log(version.published);
+console.log(version.moderationResult);
+```
+
+## Rollback to previous version
+
+Restore an earlier version of an asset:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const rolledBack = await fetchApi(
+  v1.assets.postAssetsAssetIdVersionsRollback,
+  {
+    assetId: '123456789',
+  },
+  {
+    assetVersion: 'assets/123456789/versions/2',
+  }
+);
+
+console.log('Rolled back to version:', rolledBack.path);
+```
+
+## Archive an asset
+
+Hide an asset from the catalog:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const archived = await fetchApi(v1.assets.postAssetsAssetIdArchive, {
+  assetId: '123456789',
+});
+
+console.log('Asset state:', archived.state);  // Should be 'Archived'
+```
+
+<Warning>
+Archived assets are not visible in Roblox experiences and cannot be used until restored.
+</Warning>
+
+## Restore archived asset
+
+Make an archived asset active again:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const restored = await fetchApi(v1.assets.postAssetsAssetIdRestore, {
+  assetId: '123456789',
+});
+
+console.log('Asset state:', restored.state);  // Should be 'Active'
+```
+
+## Asset privacy settings
+
+Control who can use your assets:
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+const operation = await fetchApi(
+  v1.assets.postAssets,
+  {},
+  {
+    request: {
+      assetType: 'Model',
+      displayName: 'Private Model',
+      description: 'For my game only',
+      creationContext: {
+        creator: { userId: 156 },
+        assetPrivacy: 'restricted',  // default, restricted, or openUse
+        expectedPrice: 0,
+      },
+    },
+    fileContent: modelFile,
+  }
+);
+```
+
+Privacy options:
+- `default` - Follows standard Roblox privacy settings
+- `restricted` - Only you/your group can use
+- `openUse` - Anyone can use
+
+## Complete workflow example
+
+```typescript
+import { fetchApi, configureServer } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+import * as fs from 'fs';
+
+configureServer({ cloudKey: process.env.ROBLOX_CLOUD_KEY });
+
+class AssetManager {
+  async uploadAsset(filePath: string, metadata: any) {
+    const fileContent = fs.readFileSync(filePath);
+
+    // Create asset
+    const operation = await fetchApi(
+      v1.assets.postAssets,
+      {},
+      {
+        request: metadata,
+        fileContent: fileContent,
+      }
+    );
+
+    // Wait for completion
+    return await this.waitForOperation(operation.path.split('/').pop()!);
+  }
+
+  async waitForOperation(operationId: string) {
+    let operation;
+    let attempts = 0;
+    const maxAttempts = 30;
+
+    do {
+      operation = await fetchApi(v1.assets.getOperationsOperationId, {
+        operationId: operationId,
+      });
+
+      if (!operation.done) {
+        if (++attempts >= maxAttempts) {
+          throw new Error('Operation timed out');
+        }
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    } while (!operation.done);
+
+    if (operation.error) {
+      throw new Error(`Operation failed: ${operation.error.message}`);
+    }
+
+    return operation.response;
+  }
+
+  async updateAssetVersion(assetId: string, filePath: string) {
+    const fileContent = fs.readFileSync(filePath);
+
+    const operation = await fetchApi(
+      v1.assets.patchAssetsAssetId,
+      {
+        assetId: assetId,
+        updateMask: 'description',
+      },
+      {
+        request: {
+          description: `Updated ${new Date().toISOString()}`,
+        },
+        fileContent: fileContent,
+      }
+    );
+
+    return await this.waitForOperation(operation.path.split('/').pop()!);
+  }
+
+  async getAssetInfo(assetId: string) {
+    return await fetchApi(v1.assets.getAssetsAssetId, {
+      assetId: assetId,
+      readMask: 'displayName,description,state,revisionId',
+    });
+  }
+}
+
+// Usage
+const manager = new AssetManager();
+
+const asset = await manager.uploadAsset('sword.fbx', {
+  assetType: 'Model',
+  displayName: 'Legendary Sword',
+  description: 'A powerful weapon',
+  creationContext: {
+    creator: { userId: 156 },
+    assetPrivacy: 'restricted',
+    expectedPrice: 0,
+  },
+});
+
+console.log('Created asset:', asset.assetId);
+
+// Update it later
+await manager.updateAssetVersion(asset.assetId, 'sword_v2.fbx');
+
+// Get current info
+const info = await manager.getAssetInfo(asset.assetId);
+console.log('Current state:', info.state);
+```
+
+## Best practices
+
+### Validate files before upload
+
+```typescript
+import * as fs from 'fs';
+
+function validateAssetFile(filePath: string, assetType: string) {
+  const stats = fs.statSync(filePath);
+  const sizeInMB = stats.size / (1024 * 1024);
+
+  const limits = {
+    'Model': 100,
+    'Image': 30,
+    'Audio': 20,
+    'Video': 500,
+  };
+
+  if (sizeInMB > limits[assetType]) {
+    throw new Error(`File too large: ${sizeInMB}MB (max ${limits[assetType]}MB)`);
+  }
+}
+```
+
+### Handle moderation
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+async function checkModeration(assetId: string) {
+  const asset = await fetchApi(v1.assets.getAssetsAssetId, {
+    assetId: assetId,
+  });
+
+  if (asset.moderationResult?.moderationState === 'Rejected') {
+    console.warn('Asset was rejected by moderation');
+    return false;
+  }
+
+  return true;
+}
+```
+
+### Version tracking
+
+```typescript
+import { fetchApi } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+async function trackVersions(assetId: string) {
+  const versions = await fetchApi(v1.assets.getAssetsAssetIdVersions, {
+    assetId: assetId,
+    maxPageSize: 50,
+  });
+
+  const versionLog = versions.map((v, idx) => ({
+    number: versions.length - idx,
+    path: v.path,
+    published: v.published,
+  }));
+
+  console.table(versionLog);
+}
+```
+
+## Error handling
+
+```typescript
+import { fetchApi, isAnyErrorResponse } from 'rozod';
+import { v1 } from 'rozod/lib/opencloud';
+
+async function safeUploadAsset(filePath: string, metadata: any) {
+  try {
+    // Validate file
+    validateAssetFile(filePath, metadata.assetType);
+
+    // Upload
+    const fileContent = fs.readFileSync(filePath);
+    const operation = await fetchApi(
+      v1.assets.postAssets,
+      {},
+      {
+        request: metadata,
+        fileContent: fileContent,
+      }
+    );
+
+    if (isAnyErrorResponse(operation)) {
+      throw new Error(`Upload failed: ${operation.message}`);
+    }
+
+    // Wait for completion
+    // ... (operation polling logic)
+
+    return operation;
+  } catch (error) {
+    console.error('Asset upload error:', error);
+    throw error;
+  }
+}
+```
+
+## Related APIs
+
+- [Universe APIs](/api/opencloud/universes) - Manage experiences
+- [DataStores](/api/opencloud/datastores) - Persistent data storage
+- [Overview](/api/opencloud/overview) - OpenCloud setup and authentication

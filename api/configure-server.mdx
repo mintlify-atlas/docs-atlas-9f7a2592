@@ -1,0 +1,242 @@
+---
+title: 'Server configuration'
+description: 'Configure RoZod for server-side environments with cookies, API keys, and user agents'
+---
+
+## configureServer
+
+Configures RoZod for server/Node.js environments. Sets default cookies and user agents that will be automatically applied to all requests.
+
+```typescript
+function configureServer(config: ServerConfig): void
+```
+
+### Parameters
+
+<ParamField path="config" type="ServerConfig" required>
+  The server configuration options.
+
+  <Expandable title="ServerConfig properties">
+    <ParamField path="cookies" type="string | string[]">
+      Pool of `.ROBLOSECURITY` cookie values (without the cookie name prefix). Can be a single string or an array for multiple accounts. Used for classic Roblox web API authentication.
+    </ParamField>
+
+    <ParamField path="cookieRotation" type="PoolRotation">
+      How to select cookies from the pool:
+      - `'none'`: Use the first cookie only (default for single cookie)
+      - `'random'`: Pick a random cookie per request
+      - `'round-robin'`: Cycle through cookies sequentially
+      
+      Default: `'round-robin'` when multiple cookies provided, `'none'` for single cookie.
+    </ParamField>
+
+    <ParamField path="cloudKey" type="string">
+      OpenCloud API key for `apis.roblox.com` endpoints. Automatically applied as `x-api-key` header for OpenCloud requests.
+    </ParamField>
+
+    <ParamField path="userAgents" type="string[]">
+      Custom user agents pool. If not provided, uses built-in defaults. Set to empty array to disable user agent injection.
+    </ParamField>
+
+    <ParamField path="userAgentRotation" type="PoolRotation">
+      How to select user agents from the pool:
+      - `'none'`: Use first/consistent UA for the session (default)
+      - `'random'`: Pick a random UA per request
+      - `'round-robin'`: Cycle through UAs sequentially
+    </ParamField>
+
+    <ParamField path="onCookieRefresh" type="CookieRefreshCallback">
+      Callback invoked when Roblox rotates a `.ROBLOSECURITY` cookie. Roblox is gradually implementing cookie rotation for security. Use this callback to persist the new cookie value to your storage.
+
+      The internal cookie pool is automatically updated, so you only need this callback if you want to persist the new cookie across restarts.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Examples
+
+<CodeGroup>
+```typescript Single account
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cookies: '_|WARNING:-DO-NOT-SHARE-THIS...' 
+});
+```
+
+```typescript Multiple accounts with round-robin
+import { configureServer } from 'rozod';
+
+// Multiple accounts with round-robin rotation (default)
+configureServer({
+  cookies: [
+    '_|WARNING:-DO-NOT-SHARE-THIS-1...',
+    '_|WARNING:-DO-NOT-SHARE-THIS-2...',
+    '_|WARNING:-DO-NOT-SHARE-THIS-3...',
+  ],
+});
+```
+
+```typescript Random cookie selection
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: ['cookie1', 'cookie2', 'cookie3'],
+  cookieRotation: 'random',
+});
+```
+
+```typescript Custom user agents
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: ['...'],
+  userAgents: ['MyBot/1.0', 'MyBot/2.0'],
+  userAgentRotation: 'round-robin',
+});
+```
+
+```typescript With OpenCloud API key
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: ['account1', 'account2'],
+  cloudKey: 'your_opencloud_api_key_here',
+});
+```
+
+```typescript Cookie rotation handling
+import { configureServer } from 'rozod';
+
+configureServer({
+  cookies: process.env.ROBLOX_COOKIE,
+  onCookieRefresh: async ({ oldCookie, newCookie, poolIndex }) => {
+    // Update your environment variable or database
+    await db.updateCookie(poolIndex, newCookie);
+    console.log('Cookie rotated for account', poolIndex);
+  }
+});
+```
+
+```typescript Disable user agent injection
+import { configureServer } from 'rozod';
+
+configureServer({ 
+  cookies: '...', 
+  userAgents: [] 
+});
+```
+</CodeGroup>
+
+<Note>
+  RoZod includes built-in browser user agents that are automatically applied in server environments. You can customize this behavior with the `userAgents` and `userAgentRotation` options.
+</Note>
+
+---
+
+## clearServerConfig
+
+Clears the server configuration, removing all cookies, API keys, and user agents.
+
+```typescript
+function clearServerConfig(): void
+```
+
+### Example
+
+```typescript
+import { clearServerConfig } from 'rozod';
+
+// Clear all server configuration
+clearServerConfig();
+```
+
+---
+
+## getServerConfig
+
+Gets the current server configuration as a read-only copy (excluding internal state).
+
+```typescript
+function getServerConfig(): Readonly<ServerConfig>
+```
+
+### Returns
+
+<ResponseField name="config" type="Readonly<ServerConfig>">
+  A read-only copy of the current server configuration.
+
+  <Expandable title="ServerConfig properties">
+    <ResponseField name="cookies" type="string | string[] | undefined">
+      The configured cookie pool.
+    </ResponseField>
+
+    <ResponseField name="cookieRotation" type="PoolRotation | undefined">
+      The cookie rotation strategy.
+    </ResponseField>
+
+    <ResponseField name="cloudKey" type="string | undefined">
+      The OpenCloud API key.
+    </ResponseField>
+
+    <ResponseField name="userAgents" type="string[] | undefined">
+      The configured user agent pool.
+    </ResponseField>
+
+    <ResponseField name="userAgentRotation" type="PoolRotation | undefined">
+      The user agent rotation strategy.
+    </ResponseField>
+
+    <ResponseField name="onCookieRefresh" type="CookieRefreshCallback | undefined">
+      The cookie refresh callback function.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example
+
+```typescript
+import { configureServer, getServerConfig } from 'rozod';
+
+configureServer({
+  cookies: 'my_cookie',
+  cloudKey: 'my_api_key',
+});
+
+const config = getServerConfig();
+console.log(config.cookies); // 'my_cookie'
+console.log(config.cloudKey); // 'my_api_key'
+```
+
+## Types
+
+### PoolRotation
+
+```typescript
+type PoolRotation = 'none' | 'random' | 'round-robin'
+```
+
+Defines how items are selected from a pool (cookies or user agents).
+
+### CookieRefreshEvent
+
+```typescript
+type CookieRefreshEvent = {
+  /** The old cookie value that was used in the request */
+  oldCookie: string;
+  /** The new cookie value received from Roblox */
+  newCookie: string;
+  /** The index in the cookie pool that was updated (0 for single cookie) */
+  poolIndex: number;
+}
+```
+
+Event data passed to the cookie refresh callback when Roblox rotates a cookie.
+
+### CookieRefreshCallback
+
+```typescript
+type CookieRefreshCallback = (event: CookieRefreshEvent) => void | Promise<void>
+```
+
+Callback function invoked when Roblox rotates a `.ROBLOSECURITY` cookie. Use this to persist the new cookie value to your storage (env vars, database, etc.).
